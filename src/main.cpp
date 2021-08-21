@@ -1,5 +1,4 @@
 #include <Arduino.h>
-
 #include <WiFiManager.h>
 #include <IRCClient.h>
 #include <HTTPClient.h>
@@ -19,8 +18,6 @@ Preferences preferences;
 	#include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 	MatrixPanel_I2S_DMA *display = nullptr;
 #endif
-
-
 
 const char* root_ca= \
 "-----BEGIN CERTIFICATE-----\n" \
@@ -67,8 +64,6 @@ WiFiManager	wifiManager;
 WiFiManagerParameter param_channel_name("ChannelName", "Channel Name", "", 50);
 WiFiManagerParameter param_bot_name(    "BotName",     "Bot Name",     "", 50);
 WiFiManagerParameter param_token(       "Token",       "Token",        "", 50);
-
-bool shouldSaveConfig = false;
 
 void parseTwitchData(String data, t_param *ret) {
 	uint32_t i=0;
@@ -207,6 +202,8 @@ void start_irc() {
 	twitchToken       = preferences.getString("Token");
 
 	ircChannel = "#" + twitchChannelName;
+	wiFiClient.flush();
+	wiFiClient.stop();
 	client.setCallback(irc_callback);
 }
 
