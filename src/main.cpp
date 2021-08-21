@@ -14,7 +14,9 @@ Preferences preferences;
 	#include <SPI.h>
 	#include <TFT_eSPI.h>
 
-	TFT_eSPI tft = TFT_eSPI();	
+	TFT_eSPI tft = TFT_eSPI();
+	const int led = 2;
+	const int backlight = 14;
 #endif
 
 #ifdef USE_HUB75
@@ -51,8 +53,6 @@ typedef struct s_param {
 
 #define IRC_SERVER   "irc.chat.twitch.tv"
 #define IRC_PORT     6667
-const int led = 2;
-const int backlight = 14;
 
 String twitchChannelName;
 String twitchBotName;
@@ -127,7 +127,13 @@ void pngle_on_init(pngle_t *pngle, uint32_t w, uint32_t h) {
 void irc_callback(IRCMessage ircMessage) {
 	// Serial.printf("cmd = %s\n", ircMessage.command.c_str());
 	if (ircMessage.command == "PRIVMSG" && ircMessage.text[0] != '\001') {
-		digitalWrite(led, HIGH);
+		
+		Serial.printf("<%s> %s\n", ircMessage.nick.c_str(), ircMessage.text.c_str());
+
+		#ifdef USE_TFT
+			digitalWrite(led, HIGH);
+		#endif
+
 		t_param data[20];
 		// Serial.printf("data: %s\n", ircMessage.twitch_data.c_str());
 
@@ -145,7 +151,7 @@ void irc_callback(IRCMessage ircMessage) {
 			http.begin(buff, root_ca);
 			int code = http.GET();
 			if (code == 200 || code == 304) {
-				Serial.printf("content-type: %s\n", http.header("content-type").c_str()); 
+				// Serial.printf("content-type: %s\n", http.header("content-type").c_str());
 				int len = http.getSize();
 
 				WiFiClient *stream = http.getStreamPtr();
@@ -198,10 +204,9 @@ void irc_callback(IRCMessage ircMessage) {
 				#ifdef USE_HUB75
 					display->flipDMABuffer();
 				#endif
-
-				String message("<" + ircMessage.nick + "> " + ircMessage.text);
-				Serial.println(message);
-				digitalWrite(led, LOW);
+				#ifdef USE_TFT
+					digitalWrite(led, LOW);
+				#endif
 			}
 		}
 	}
@@ -230,9 +235,11 @@ void setup() {
 	Serial.begin(115200);
 	preferences.begin("emotes", false);
 
-	pinMode(led, OUTPUT);
-	pinMode(backlight, OUTPUT);
-	digitalWrite(backlight, 1);
+	#ifdef USE_TFT
+		pinMode(led, OUTPUT);
+		pinMode(backlight, OUTPUT);
+		digitalWrite(backlight, 1);
+	#endif
 
 	Serial.printf("Start Wifi manager\n");
 	wifiManager.setDebugOutput(false);
