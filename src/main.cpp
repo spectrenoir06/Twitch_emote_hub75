@@ -5,6 +5,9 @@
 #include <pngle.h>
 #include <Preferences.h>
 
+#define STRINGIZE(x) #x
+#define STRINGIZE_VALUE_OF(x) STRINGIZE(x)
+
 Preferences preferences;
 
 #ifdef USE_LCD
@@ -65,6 +68,9 @@ WiFiManagerParameter param_channel_name("ChannelName", "Channel Name", "", 50);
 WiFiManagerParameter param_bot_name(    "BotName",     "Bot Name",     "", 50);
 WiFiManagerParameter param_token(       "Token",       "Token",        "", 50);
 
+uint32_t off_x;
+uint32_t off_y;
+
 void parseTwitchData(String data, t_param *ret) {
 	uint32_t i=0;
 	while (1) {
@@ -92,13 +98,14 @@ void pngle_on_draw(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t 
 	rgba[0] = rgba[0] * (rgba[3] / 255.0);
 	rgba[1] = rgba[1] * (rgba[3] / 255.0);
 	rgba[2] = rgba[2] * (rgba[3] / 255.0);
+
 	uint16_t color = (rgba[0] << 8 & 0xf800) | (rgba[1] << 3 & 0x07e0) | (rgba[2] >> 3 & 0x001f);
 	if (rgba[3]) {
 		#ifdef USE_LCD
 			tft.fillRect(x*3, y*3, w*3, h*3, color);
 		#endif
 		#ifdef USE_HUB75
-			display->fillRect(x, y, w, h, color);
+			display->fillRect(off_x+x, off_y+y, w, h, color);
 		#endif
 		// buffer_img[x+y*56] = color;
 	} else {
@@ -106,22 +113,25 @@ void pngle_on_draw(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t 
 			tft.fillRect(x*3, y*3, w*3, h*3, 0x0000);
 		#endif
 		#ifdef USE_HUB75
-			display->fillRect(x, y, w, h, 0x0000);
+			display->fillRect(off_x+x, off_y+y, w, h, 0x0000);
 		#endif
 		// buffer_img[x+y*56] = 0;
 	}
+}
+
+void pngle_on_init(pngle_t *pngle, uint32_t w, uint32_t h) {
+	off_x = (MATRIX_W - w) / 2;
+	off_y = (MATRIX_H - h) / 2;
 }
 
 void irc_callback(IRCMessage ircMessage) {
 	// Serial.printf("cmd = %s\n", ircMessage.command.c_str());
 	if (ircMessage.command == "PRIVMSG" && ircMessage.text[0] != '\001') {
 		digitalWrite(led, HIGH);
-		// t_message_twitch_data data;
 		t_param data[20];
-		Serial.printf("data: %s\n", ircMessage.twitch_data.c_str());
+		// Serial.printf("data: %s\n", ircMessage.twitch_data.c_str());
 
 		parseTwitchData(ircMessage.twitch_data, data);
-
 		String emotes = get_param("emotes", data, 20);
 
 		if (emotes != "") {
@@ -129,7 +139,7 @@ void irc_callback(IRCMessage ircMessage) {
 
 			char buff[200];
 			String str = emotes.substring(0, emotes.indexOf(":")); // get the ID of the first emote
-			sprintf(buff, "https://static-cdn.jtvnw.net/emoticons/v2/%s/static/light/1.0", str.c_str());
+			sprintf(buff, "https://static-cdn.jtvnw.net/emoticons/v2/%s/static/light/%s", str.c_str(), STRINGIZE_VALUE_OF(EMOTE_SIZE));
 			Serial.printf("url = '%s'\n", buff);
 			
 			http.begin(buff, root_ca);
@@ -149,6 +159,7 @@ void irc_callback(IRCMessage ircMessage) {
 					display->clearScreen();
 				#endif
 
+				pngle_set_init_callback(pngle, pngle_on_init);
 				pngle_set_draw_callback(pngle, pngle_on_draw);
 
 				uint8_t buf[1024];
