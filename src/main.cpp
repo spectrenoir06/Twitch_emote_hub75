@@ -49,29 +49,6 @@ typedef struct s_param {
 	String val;
 } t_param;
 
-// typedef struct s_message_twitch_data {
-// 	t_param data[20];
-// } t_message_twitch_data;
-
-// typedef struct s_message_twitch_data {
-// 	String badge_info;
-// 	String badges;
-// 	String client_nonce;
-// 	String color;
-// 	String display_name;
-// 	String emote_only;
-// 	String emotes;
-// 	String flags;
-// 	String id;
-// 	String mod;
-// 	String room_id;
-// 	String subscriber;
-// 	String tmi_sent_ts;
-// 	String turbo;
-// 	String user_id;
-// } t_message_twitch_data;
-
-
 #define IRC_SERVER   "irc.chat.twitch.tv"
 #define IRC_PORT     6667
 const int led = 2;
