@@ -8,12 +8,19 @@
 
 Preferences preferences;
 
-#include <SPI.h>
-#include <TFT_eSPI.h>
+#ifdef USE_LCD
+	#include <SPI.h>
+	#include <TFT_eSPI.h>
 
-uint16_t buffer_img[56*56];
+	TFT_eSPI tft = TFT_eSPI();	
+#endif
 
-TFT_eSPI tft = TFT_eSPI();	
+#ifdef USE_HUB75
+	#include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
+	MatrixPanel_I2S_DMA *display = nullptr;
+#endif
+
+
 
 const char* root_ca= \
 "-----BEGIN CERTIFICATE-----\n" \
@@ -37,24 +44,32 @@ const char* root_ca= \
 "rqXRfboQnoZsG4q5WTP468SQvvG5\n" \
 "-----END CERTIFICATE-----\n";
 
+typedef struct s_param {
+	String key;
+	String val;
+} t_param;
 
-typedef struct s_message_twitch_data {
-	String badge_info;
-	String badges;
-	String client_nonce;
-	String color;
-	String display_name;
-	String emote_only;
-	String emotes;
-	String flags;
-	String id;
-	String mod;
-	String room_id;
-	String subscriber;
-	String tmi_sent_ts;
-	String turbo;
-	String user_id;
-} t_message_twitch_data;
+// typedef struct s_message_twitch_data {
+// 	t_param data[20];
+// } t_message_twitch_data;
+
+// typedef struct s_message_twitch_data {
+// 	String badge_info;
+// 	String badges;
+// 	String client_nonce;
+// 	String color;
+// 	String display_name;
+// 	String emote_only;
+// 	String emotes;
+// 	String flags;
+// 	String id;
+// 	String mod;
+// 	String room_id;
+// 	String subscriber;
+// 	String tmi_sent_ts;
+// 	String turbo;
+// 	String user_id;
+// } t_message_twitch_data;
 
 
 #define IRC_SERVER   "irc.chat.twitch.tv"
@@ -78,33 +93,27 @@ WiFiManagerParameter param_token(       "Token",       "Token",        "", 50);
 
 bool shouldSaveConfig = false;
 
-void saveConfigCallback() {
-	Serial.println("Should save config");
-	shouldSaveConfig = true;
+void parseTwitchData(String data, t_param *ret) {
+	uint32_t i=0;
+	while (1) {
+		ret[i].key = data.substring(0, data.indexOf("="));
+		ret[i].val = data.substring(data.indexOf("=") + 1, data.indexOf(";"));
+		// Serial.printf("%s:\t%s\n", ret[i].key.c_str(), ret[i].val.c_str());
+		i++;
+
+		data = data.substring(data.indexOf(";") + 1);
+		if (data == "user-type")
+			break;
+	}
 }
 
-String pop_data(String *str) {
-	String ret = str->substring(str->indexOf("=") + 1, str->indexOf(";"));
-	*str = str->substring(str->indexOf(";") + 1);
-	return (ret);
-}
-
-void parseTwitchData(String data, t_message_twitch_data *ret) {
-	ret->badge_info = pop_data(&data);
-	ret->badges = pop_data(&data);
-	ret->client_nonce = pop_data(&data);
-	ret->color = pop_data(&data);
-	ret->display_name = pop_data(&data);
-	ret->emote_only = pop_data(&data);
-	ret->emotes = pop_data(&data);
-	ret->flags = pop_data(&data);
-	ret->id = pop_data(&data);
-	ret->mod = pop_data(&data);
-	ret->room_id = pop_data(&data);
-	ret->subscriber = pop_data(&data);
-	ret->tmi_sent_ts = pop_data(&data);
-	ret->turbo = pop_data(&data);
-	ret->user_id = pop_data(&data);
+String get_param(String key, t_param *param, size_t size) {
+	for (int i=0; i<size; i++) {
+		if (param[i].key == key) {
+			return param[i].val;
+		}
+	}
+	return String();
 }
 
 void pngle_on_draw(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint8_t rgba[4]) {
@@ -113,79 +122,123 @@ void pngle_on_draw(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t 
 	rgba[2] = rgba[2] * (rgba[3] / 255.0);
 	uint16_t color = (rgba[0] << 8 & 0xf800) | (rgba[1] << 3 & 0x07e0) | (rgba[2] >> 3 & 0x001f);
 	if (rgba[3]) {
-		tft.fillRect(x*3, y*3, w*3, h*3, color);
+		#ifdef USE_LCD
+			tft.fillRect(x*3, y*3, w*3, h*3, color);
+		#endif
+		#ifdef USE_HUB75
+			display->fillRect(x, y, w, h, color);
+		#endif
 		// buffer_img[x+y*56] = color;
 	} else {
-		tft.fillRect(x*3, y*3, w*3, h*3, 0x0000);
+		#ifdef USE_LCD
+			tft.fillRect(x*3, y*3, w*3, h*3, 0x0000);
+		#endif
+		#ifdef USE_HUB75
+			display->fillRect(x, y, w, h, 0x0000);
+		#endif
 		// buffer_img[x+y*56] = 0;
 	}
 }
 
-void callback(IRCMessage ircMessage) {
-	Serial.printf("cmd = %s\n", ircMessage.command.c_str());
+void irc_callback(IRCMessage ircMessage) {
+	// Serial.printf("cmd = %s\n", ircMessage.command.c_str());
 	if (ircMessage.command == "PRIVMSG" && ircMessage.text[0] != '\001') {
 		digitalWrite(led, HIGH);
-		t_message_twitch_data data;
-		parseTwitchData(ircMessage.twitch_data, &data);
-		Serial.printf("emotes: %s\n", data.emotes.c_str());
+		// t_message_twitch_data data;
+		t_param data[20];
+		Serial.printf("data: %s\n", ircMessage.twitch_data.c_str());
 
-		char buff[200];
-		String str = data.emotes.substring(0, data.emotes.indexOf(":")); // get the ID of the first emote
-		sprintf(buff, "https://static-cdn.jtvnw.net/emoticons/v2/%s/static/light/2.0", str.c_str());
-		Serial.printf("url = '%s'\n", buff);
-		
-		http.begin(buff, root_ca);
+		parseTwitchData(ircMessage.twitch_data, data);
 
-		if (http.GET() == 200) {
-			int len = http.getSize();
+		String emotes = get_param("emotes", data, 20);
 
-			WiFiClient *stream = http.getStreamPtr();
+		if (emotes != "") {
+			Serial.printf("emotes: %s\n", emotes.c_str());
 
-			pngle_t *pngle = pngle_new();
-			tft.fillScreen(TFT_BLACK);
-			pngle_set_draw_callback(pngle, pngle_on_draw);
-
-			uint8_t buf[1024];
-			int remain = 0;
+			char buff[200];
+			String str = emotes.substring(0, emotes.indexOf(":")); // get the ID of the first emote
+			sprintf(buff, "https://static-cdn.jtvnw.net/emoticons/v2/%s/static/light/1.0", str.c_str());
+			Serial.printf("url = '%s'\n", buff);
 			
-			while (http.connected() && (len > 0 || len == -1)) {
-				size_t size = stream->available();
-				if (!size) {
-					delay(1);
-					continue;
+			http.begin(buff, root_ca);
+			int code = http.GET();
+			if (code == 200 || code == 304) {
+				Serial.printf("content-type: %s\n", http.header("content-type").c_str()); 
+				int len = http.getSize();
+
+				WiFiClient *stream = http.getStreamPtr();
+
+				pngle_t *pngle = pngle_new();
+
+				#ifdef USE_LCD
+					tft.fillScreen(TFT_BLACK);
+				#endif
+				#ifdef USE_HUB75
+					display->clearScreen();
+				#endif
+
+				pngle_set_draw_callback(pngle, pngle_on_draw);
+
+				uint8_t buf[1024];
+				int remain = 0;
+				
+				while (http.connected() && (len > 0 || len == -1)) {
+					size_t size = stream->available();
+					if (!size) {
+						delay(1);
+						continue;
+					}
+
+					if (size > sizeof(buf) - remain)
+						size = sizeof(buf) - remain;
+
+					int c = stream->readBytes(buf + remain, size);
+					if (c > 0) {
+						int fed = pngle_feed(pngle, buf, remain + c);
+						if (fed < 0) {
+							// tft.fillScreen(TFT_BLACK);
+							// tft.printf("ERROR: %s\n", pngle_error(pngle));
+							break;
+						} else
+							len -= c;
+
+						remain = remain + c - fed;
+						if (remain > 0)
+							memmove(buf, buf + fed, remain);
+					} else
+						delay(1);
 				}
 
-				if (size > sizeof(buf) - remain)
-					size = sizeof(buf) - remain;
+				pngle_destroy(pngle);
+				http.end();
+				// tft.drawBitmap(0, 0, (const uint8_t *)buffer_img, 56, 56, 0xA815);
+				#ifdef USE_HUB75
+					display->flipDMABuffer();
+				#endif
 
-				int c = stream->readBytes(buf + remain, size);
-				if (c > 0) {
-					int fed = pngle_feed(pngle, buf, remain + c);
-					if (fed < 0) {
-						tft.fillScreen(TFT_BLACK);
-						tft.printf("ERROR: %s\n", pngle_error(pngle));
-						break;
-					} else
-						len -= c;
-
-					remain = remain + c - fed;
-					if (remain > 0)
-						memmove(buf, buf + fed, remain);
-				} else
-					delay(1);
+				String message("<" + ircMessage.nick + "> " + ircMessage.text);
+				Serial.println(message);
+				digitalWrite(led, LOW);
 			}
-
-			pngle_destroy(pngle);
-			http.end();
-			// tft.drawBitmap(0, 0, (const uint8_t *)buffer_img, 56, 56, 0xA815);
-
-			String message("<" + ircMessage.nick + "> " + ircMessage.text);
-			Serial.println(message);
-			digitalWrite(led, LOW);
 		}
-		
-
 	}
+}
+
+void start_irc() {
+	twitchChannelName = preferences.getString("ChannelName");
+	twitchBotName     = preferences.getString("BotName");
+	twitchToken       = preferences.getString("Token");
+
+	ircChannel = "#" + twitchChannelName;
+	client.setCallback(irc_callback);
+}
+
+void setSaveParamsCallback() {
+	Serial.println("saving config");
+	preferences.putString("ChannelName", param_channel_name.getValue());
+	preferences.putString("BotName",     param_bot_name.getValue());
+	preferences.putString("Token",       param_token.getValue());
+	start_irc();
 }
 
 void setup() {
@@ -202,7 +255,7 @@ void setup() {
 	wifiManager.setConfigPortalTimeout(180); // try for 3 minute
 	wifiManager.setMinimumSignalQuality(15);
 	wifiManager.setRemoveDuplicateAPs(true);
-	wifiManager.setSaveConfigCallback(saveConfigCallback);
+	wifiManager.setSaveParamsCallback(setSaveParamsCallback);
 
 	wifiManager.addParameter(&param_channel_name);
 	wifiManager.addParameter(&param_bot_name);
@@ -219,32 +272,41 @@ void setup() {
 
 	bool rest = wifiManager.autoConnect("Twitch_Emote");
 
-	if (rest)
+	if (rest) {
 		Serial.println("Wifi connected");
+		wifiManager.startWebPortal();
+	}
 	else
 		ESP.restart();
 
-	if (shouldSaveConfig) {
-		Serial.println("saving config");
-		preferences.putString("ChannelName", param_channel_name.getValue());
-		preferences.putString("BotName",     param_bot_name.getValue());
-		preferences.putString("Token",       param_token.getValue());
-	}
+	start_irc();
 
-	twitchChannelName = preferences.getString("ChannelName");
-	twitchBotName     = preferences.getString("BotName");
-	twitchToken       = preferences.getString("Token");
-	
-	IPAddress ip = WiFi.localIP();
-	Serial.println(ip);
+	#ifdef USE_LCD
+		tft.begin();
+		tft.setRotation(3);
+		// tft.setSwapBytes(false);
+		tft.initDMA();
+	#endif
+	#ifdef USE_HUB75
+		HUB75_I2S_CFG::i2s_pins _pins = {R1_PIN, G1_PIN, B1_PIN, R2_PIN, G2_PIN, B2_PIN, A_PIN, B_PIN, C_PIN, D_PIN, E_PIN, LAT_PIN, OE_PIN, CLK_PIN};
+		
+		HUB75_I2S_CFG mxconfig(
+			MATRIX_W, // Module width
+			MATRIX_H, // Module height
+			MATRIX_CHAIN, // chain length
+			_pins // pin mapping
+		);
 
-	ircChannel = "#" + twitchChannelName;
-	client.setCallback(callback);
+		mxconfig.double_buff = true; // Turn of double buffer
+		mxconfig.clkphase = true;
 
-	tft.begin();
-	tft.setRotation(3);
-	// tft.setSwapBytes(false);
-	tft.initDMA();
+		// OK, now we can create our matrix object
+		display = new MatrixPanel_I2S_DMA(mxconfig);
+
+		display->begin();  // setup display with pins as pre-defined in the library
+	#endif
+
+	Serial.println("...Starting Display");
 }
 
 
