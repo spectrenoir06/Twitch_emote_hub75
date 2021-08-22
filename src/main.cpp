@@ -110,65 +110,66 @@ void GIFDraw(GIFDRAW *pDraw) {
 		pDraw->ucHasTransparency = 0;
 	}
 	// Apply the new pixels to the main image
-	if (pDraw->ucHasTransparency) { // if transparency used
-		uint8_t *pEnd, c, ucTransparent = pDraw->ucTransparent;
-		int x, iCount;
-		pEnd = s + pDraw->iWidth;
-		x = 0;
-		iCount = 0; // count non-transparent pixels
-		while (x < pDraw->iWidth) {
-			c = ucTransparent-1;
-			d = usTemp;
-			while (c != ucTransparent && s < pEnd) {
-				c = *s++;
-				if (c == ucTransparent) // done, stop
-				{
-					s--; // back up to treat it like transparent
-				}
-				else // opaque
-				{
-					*d++ = usPalette[c];
-					iCount++;
-				}
-			} // while looking for opaque pixels
-			if (iCount) { // any opaque pixels?
-				for(int xOffset = 0; xOffset < iCount; xOffset++ ){
-					#ifdef USE_LCD
-						tft.drawPixel(x + xOffset, y, usTemp[xOffset]);
-					#endif
-					#ifdef USE_HUB75
-						display->drawPixel(off_x+x + xOffset, off_y+y, usTemp[xOffset]);
-					#endif
-				}
-				x += iCount;
-				iCount = 0;
-			}
-			// no, look for a run of transparent pixels
-			c = ucTransparent;
-			while (c == ucTransparent && s < pEnd) {
-				c = *s++;
-				if (c == ucTransparent)
-					iCount++;
-				else
-					s--; 
-			}
-			if (iCount) {
-				x += iCount; // skip these
-				iCount = 0;
-			}
-		}
-	} else {
+	// if (pDraw->ucHasTransparency) { // if transparency used
+	// 	uint8_t *pEnd, c, ucTransparent = pDraw->ucTransparent;
+	// 	int x, iCount;
+	// 	pEnd = s + pDraw->iWidth;
+	// 	x = 0;
+	// 	iCount = 0; // count non-transparent pixels
+	// 	while (x < pDraw->iWidth) {
+	// 		c = ucTransparent-1;
+	// 		d = usTemp;
+	// 		while (c != ucTransparent && s < pEnd) {
+	// 			c = *s++;
+	// 			if (c == ucTransparent) // done, stop
+	// 			{
+	// 				s--; // back up to treat it like transparent
+	// 			}
+	// 			else // opaque
+	// 			{
+	// 				*d++ = usPalette[c];
+	// 				iCount++;
+	// 			}
+	// 		} // while looking for opaque pixels
+	// 		if (iCount) { // any opaque pixels?
+	// 			for(int xOffset = 0; xOffset < iCount; xOffset++ ){
+	// 				#ifdef USE_LCD
+	// 					tft.drawPixel(x + xOffset, y, usTemp[xOffset]);
+	// 				#endif
+	// 				#ifdef USE_HUB75
+	// 					display->drawPixel(off_x+x + xOffset, off_y+y, usTemp[xOffset]);
+	// 				#endif
+	// 			}
+	// 			x += iCount;
+	// 			iCount = 0;
+	// 		}
+	// 		// no, look for a run of transparent pixels
+	// 		c = ucTransparent;
+	// 		while (c == ucTransparent && s < pEnd) {
+	// 			c = *s++;
+	// 			if (c == ucTransparent)
+	// 				iCount++;
+	// 			else
+	// 				s--; 
+	// 		}
+	// 		if (iCount) {
+	// 			x += iCount; // skip these
+	// 			iCount = 0;
+	// 		}
+	// 	}
+	// } else {
 		s = pDraw->pPixels;
 		// Translate the 8-bit pixels through the RGB565 palette (already byte reversed)
 		for (x=0; x<pDraw->iWidth; x++) {
 			#ifdef USE_LCD
-				tft.drawPixel(x, y, usPalette[*s++]);
+				// tft.drawPixel(x, y, usPalette[*s++]);
+				tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), SCALE, SCALE, usPalette[*s++]);
 			#endif
 			#ifdef USE_HUB75
 				display->drawPixel(off_x+x, off_y+y, usPalette[*s++]);
 			#endif
 		}
-	}
+	// }
 }
 
 #endif
@@ -204,14 +205,14 @@ void pngle_on_draw(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t 
 	uint16_t color = (rgba[0] << 8 & 0xf800) | (rgba[1] << 3 & 0x07e0) | (rgba[2] >> 3 & 0x001f);
 	if (rgba[3]) {
 		#ifdef USE_LCD
-			tft.fillRect(x*2, y*2, w*2, h*2, color);
+			tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), w*SCALE, h*SCALE, color);
 		#endif
 		#ifdef USE_HUB75
 			display->fillRect(off_x+x, off_y+y, w, h, color);
 		#endif
 	} else {
 		#ifdef USE_LCD
-			tft.fillRect(x*2, y*2, w*2, h*2, 0x0000);
+			tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), w*SCALE, h*SCALE, 0x0000);
 		#endif
 		#ifdef USE_HUB75
 			display->fillRect(off_x+x, off_y+y, w, h, 0x0000);
@@ -220,13 +221,8 @@ void pngle_on_draw(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t 
 }
 
 void pngle_on_init(pngle_t *pngle, uint32_t w, uint32_t h) {
-	#ifdef USE_HUB75
-		off_x = (MATRIX_W - w) / 2;
-		off_y = (MATRIX_H - h) / 2;
-	#else
-		off_x = 0;
-		off_x = 0;
-	#endif
+	off_x = (MATRIX_W - w*SCALE) / 2;
+	off_y = (MATRIX_H - h*SCALE) / 2;
 }
 
 int download_http(const char *url, const char* emote) {
@@ -342,8 +338,11 @@ void irc_callback(IRCMessage ircMessage) {
 						if (gif.open(gif_ptr, len, GIFDraw)) {
 							Serial.printf("Gif open\n");
 							gif_playing = 1;
-							off_x = (MATRIX_W - gif.getCanvasWidth()) / 2;
-							off_y = (MATRIX_H - gif.getCanvasHeight()) / 2;
+							off_x = (MATRIX_W - gif.getCanvasWidth() * SCALE) / 2;
+							off_y = (MATRIX_H - gif.getCanvasHeight() * SCALE) / 2;
+							#ifdef USE_LCD
+								tft.fillScreen(TFT_BLACK);
+							#endif
 						}
 					} else {
 						Serial.printf("Can't allocate space for GIF\n");
@@ -361,6 +360,9 @@ void irc_callback(IRCMessage ircMessage) {
 				}
 				#endif
 				http.end();
+				#ifdef USE_LCD
+					digitalWrite(led, LOW);
+				#endif
 			}
 		}
 	}
@@ -424,6 +426,8 @@ void setup() {
 	}
 	else
 		ESP.restart();
+	Serial.print("IP: \n");
+	Serial.println(WiFi.localIP());
 
 	start_irc();
 
@@ -437,19 +441,22 @@ void setup() {
 		HUB75_I2S_CFG::i2s_pins _pins = {R1_PIN, G1_PIN, B1_PIN, R2_PIN, G2_PIN, B2_PIN, A_PIN, B_PIN, C_PIN, D_PIN, E_PIN, LAT_PIN, OE_PIN, CLK_PIN};
 		
 		HUB75_I2S_CFG mxconfig(
-			MATRIX_W, // Module width
-			MATRIX_H, // Module height
+			MATRIX_W,     // Module width
+			MATRIX_H,     // Module height
 			MATRIX_CHAIN, // chain length
-			_pins // pin mapping
+			_pins         // pin mapping
 		);
 
-		// mxconfig.double_buff = true; // Turn of double buffer
-		// mxconfig.clkphase = true;
+		mxconfig.double_buff    = false;                    // use DMA double buffer (twice as much RAM required)
+		mxconfig.driver         = HUB75_I2S_CFG::SHIFTREG; // Matrix driver chip type - default is a plain shift register
+		mxconfig.i2sspeed       = HUB75_I2S_CFG::HZ_10M;   // I2S clock speed
+		mxconfig.clkphase       = true;                    // I2S clock phase
+		mxconfig.latch_blanking = MATRIX_LATCH_BLANK;      // How many clock cycles to blank OE before/after LAT signal change, default is 1 clock
 
-		// OK, now we can create our matrix object
 		display = new MatrixPanel_I2S_DMA(mxconfig);
 
 		display->begin();  // setup display with pins as pre-defined in the library
+		display->setBrightness8(MATRIX_BRIGHNESS); //0-255
 	#endif
 
 	Serial.println("...Starting Display");
