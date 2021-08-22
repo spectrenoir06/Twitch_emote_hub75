@@ -86,12 +86,12 @@ WiFiManagerParameter param_token(       "Token",       "Token",        "", 50);
 
 uint32_t off_x;
 uint32_t off_y;
+pngle_t *pngle;
 
 #ifdef USE_GIF
 
 uint8_t *gif_ptr;
 uint32_t gif_buf_pos = 0;
-pngle_t *pngle;
 
 
 // Draw a line of image directly on the LCD
@@ -345,6 +345,9 @@ void irc_callback(IRCMessage ircMessage) {
 							#ifdef USE_LCD
 								tft.fillScreen(TFT_BLACK);
 							#endif
+							#ifdef USE_HUB75
+								display->clearScreen();
+							#endif
 						}
 					} else {
 						Serial.printf("Can't allocate space for GIF\n");
@@ -390,19 +393,16 @@ void setSaveParamsCallback() {
 }
 
 void File_Upload() {
-//   append_page_header();
 	String webpage = "";
 	webpage += FPSTR(HTTP_STYLE);
 	webpage += F("<body class='invert'><div class='wrap'>");
-	webpage += F("<h3>Select File to Upload</h3>"); 
+	webpage += F("<h3>Select File to upload an image to display</h3>"); 
 	webpage += F("<FORM action='/fupload' method='post' enctype='multipart/form-data'>");
 	webpage += F("<input class='buttons' type='file' name='fupload' id = 'fupload' value=''><br>");
 	webpage += F("<br><button class='buttons' type='submit'>Upload File</button><br>");
 	webpage += F("</div'></body'>");
-//   append_page_footer();
 	wifiManager.server->send(200, "text/html", webpage);
 }
-//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 void handleFileUpload(){ // upload a new file to the Filing system
 	String webpage = "";
@@ -416,6 +416,7 @@ void handleFileUpload(){ // upload a new file to the Filing system
 		#endif
 
 		if (uploadfile.type == "image/png") {
+			gif_playing = 0;
 			pngle = pngle_new();
 
 			#ifdef USE_LCD
@@ -427,7 +428,9 @@ void handleFileUpload(){ // upload a new file to the Filing system
 
 			pngle_set_init_callback(pngle, pngle_on_init);
 			pngle_set_draw_callback(pngle, pngle_on_draw);
-		} else if (uploadfile.type == "image/gif") {
+		}
+		#ifdef USE_GIF
+		else if (uploadfile.type == "image/gif") {
 			Serial.printf("GIF\n");
 			gif_playing = 0;
 			gif_buf_pos = 0;
@@ -443,7 +446,9 @@ void handleFileUpload(){ // upload a new file to the Filing system
 				Serial.printf("Can't allocate space for GIF\n");
 			}
 
-		} else {
+		}
+		#endif
+		else {
 			webpage = "";
 			webpage += FPSTR(HTTP_STYLE);
 			webpage += F("<body class='invert'><div class='wrap'>");
@@ -458,19 +463,30 @@ void handleFileUpload(){ // upload a new file to the Filing system
 		if (uploadfile.type == "image/png") {
 			pngle_feed(pngle, uploadfile.buf, uploadfile.currentSize);
 		} else if (uploadfile.type == "image/gif") {
-			// Serial.printf("realloc %p, %d\n", gif_ptr, gif_buf_pos+uploadfile.currentSize);
-			#ifdef BOARD_HAS_PSRAM
-				gif_ptr = (uint8_t*)ps_realloc(gif_ptr, gif_buf_pos+uploadfile.currentSize);
-			#else
-				gif_ptr = (uint8_t*)realloc(gif_ptr, gif_buf_pos+uploadfile.currentSize);
+			#ifdef USE_GIF
+				#ifdef BOARD_HAS_PSRAM
+					uint8_t* ptr_tmp = (uint8_t*)ps_realloc(gif_ptr, gif_buf_pos+uploadfile.currentSize);
+				#else
+					uint8_t* ptr_tmp = (uint8_t*)realloc(gif_ptr, gif_buf_pos+uploadfile.currentSize);
+				#endif
+				if (!ptr_tmp) {
+					free(gif_ptr);
+					gif_ptr = 0;
+					Serial.printf("Can't reallocate space for GIF\n");
+					webpage = "";
+					webpage += FPSTR(HTTP_STYLE);
+					webpage += F("<body class='invert'><div class='wrap'>");
+					webpage += F("<h3>File uploaded Error not enought RAM</h3>");
+					webpage += F("<a href='/upload'>[Back]</a><br><br>");
+					webpage += F("</div'></body'>");
+					wifiManager.server->send(400,"text/html", webpage);
+					return;
+				} else {
+					gif_ptr = ptr_tmp;
+					memcpy(gif_ptr+gif_buf_pos, uploadfile.buf, uploadfile.currentSize);
+					gif_buf_pos+=uploadfile.currentSize;
+				}
 			#endif
-			if (!gif_ptr) {
-				Serial.printf("Can't reallocate space for GIF\n");
-			} else {
-				memcpy(gif_ptr+gif_buf_pos, uploadfile.buf, uploadfile.currentSize);
-				gif_buf_pos+=uploadfile.currentSize;
-			}
-
 		}
 	}
 	else if (uploadfile.status == UPLOAD_FILE_END) {
@@ -492,29 +508,39 @@ void handleFileUpload(){ // upload a new file to the Filing system
 			webpage += F("</div'></body'>");
 			wifiManager.server->send(200,"text/html",webpage);
 		} else if (uploadfile.type == "image/gif") {
-			if (gif.open(gif_ptr, uploadfile.totalSize, GIFDraw)) {
-				Serial.printf("Gif open\n");
-				gif_playing = 1;
-				off_x = (MATRIX_W - gif.getCanvasWidth() * SCALE) / 2;
-				off_y = (MATRIX_H - gif.getCanvasHeight() * SCALE) / 2;
-				#ifdef USE_LCD
-					tft.fillScreen(TFT_BLACK);
-				#endif
-			}
-			webpage = "";
-			webpage += FPSTR(HTTP_STYLE);
-			webpage += F("<body class='invert'><div class='wrap'>");
-			webpage += F("<h3>File was successfully uploaded</h3>"); 
-			webpage += F("<h2>Uploaded File Name: "); webpage += uploadfile.filename+"</h2>";
-			webpage += F("<a href='/upload'>[Back]</a><br><br>");
-			webpage += F("</div'></body'>");
-			wifiManager.server->send(200,"text/html",webpage);
+			#ifdef USE_GIF
+				if (gif.open(gif_ptr, uploadfile.totalSize, GIFDraw)) {
+					Serial.printf("Gif open\n");
+					gif_playing = 1;
+					off_x = (MATRIX_W - gif.getCanvasWidth() * SCALE) / 2;
+					off_y = (MATRIX_H - gif.getCanvasHeight() * SCALE) / 2;
+					#ifdef USE_LCD
+						tft.fillScreen(TFT_BLACK);
+					#endif
+					#ifdef USE_HUB75
+						display->clearScreen();
+					#endif
+				}
+				webpage = "";
+				webpage += FPSTR(HTTP_STYLE);
+				webpage += F("<body class='invert'><div class='wrap'>");
+				webpage += F("<h3>File was successfully uploaded</h3>"); 
+				webpage += F("<h2>Uploaded File Name: "); webpage += uploadfile.filename+"</h2>";
+				webpage += F("<a href='/upload'>[Back]</a><br><br>");
+				webpage += F("</div'></body'>");
+				wifiManager.server->send(200,"text/html",webpage);
+			#endif
 		}
 	}
 }
 
 void setup() {
 	Serial.begin(115200);
+	#ifdef BOARD_HAS_PSRAM
+		Serial.printf("esp32 use external RAM\n");
+	#else
+		Serial.printf("esp32 use internal RAM\n");
+	#endif
 	preferences.begin("emotes", false);
 
 	#ifdef USE_LCD
@@ -537,7 +563,7 @@ void setup() {
 	
 	wifiManager.setClass("invert"); // dark theme
 
-	std::vector<const char*> menu = { "param", "wifi", "info", "sep", "restart" };
+	std::vector<const char*> menu = {"wifi", "info", "sep", "update", "restart" };
 	wifiManager.setMenu(menu);
 
 	// wifiManager.setParamsPage(true);
