@@ -24,6 +24,12 @@ Preferences preferences;
 	MatrixPanel_I2S_DMA *display = nullptr;
 #endif
 
+#ifdef USE_GIF
+	#include <AnimatedGIF.h>
+	AnimatedGIF gif;
+#endif
+uint8_t gif_playing = 0;
+
 const char* root_ca= \
 "-----BEGIN CERTIFICATE-----\n" \
 "MIIDQTCCAimgAwIBAgITBmyfz5m/jAo54vB4ikPmljZbyjANBgkqhkiG9w0BAQsF\n" \
@@ -51,8 +57,18 @@ typedef struct s_param {
 	String val;
 } t_param;
 
-#define IRC_SERVER   "irc.chat.twitch.tv"
-#define IRC_PORT     6667
+#define IRC_SERVER "irc.chat.twitch.tv"
+#define IRC_PORT   6667
+
+#define CDN_URL_GIF "https://static-cdn.jtvnw.net/emoticons/v2/%s/default/light/%s"
+#define CDN_URL_PNG "https://static-cdn.jtvnw.net/emoticons/v2/%s/static/light/%s"
+
+#ifdef  USE_GIF
+	#define CDN_URL_DEFAULT CDN_URL_GIF
+#else
+	#define CDN_URL_DEFAULT CDN_URL_PNG
+#endif
+
 
 String twitchChannelName;
 String twitchBotName;
@@ -70,6 +86,92 @@ WiFiManagerParameter param_token(       "Token",       "Token",        "", 50);
 
 uint32_t off_x;
 uint32_t off_y;
+
+#ifdef USE_GIF
+
+uint8_t *gif_ptr;
+
+
+// Draw a line of image directly on the LCD
+void GIFDraw(GIFDRAW *pDraw) {
+	uint8_t *s;
+	uint16_t *d, *usPalette, usTemp[320];
+	int x, y;
+
+	usPalette = pDraw->pPalette;
+	y = pDraw->iY + pDraw->y; // current line
+	
+	s = pDraw->pPixels;
+	if (pDraw->ucDisposalMethod == 2) {// restore to background color 
+		for (x=0; x<MATRIX_W; x++) {
+			if (s[x] == pDraw->ucTransparent)
+			s[x] = pDraw->ucBackground;
+		}
+		pDraw->ucHasTransparency = 0;
+	}
+	// Apply the new pixels to the main image
+	if (pDraw->ucHasTransparency) { // if transparency used
+		uint8_t *pEnd, c, ucTransparent = pDraw->ucTransparent;
+		int x, iCount;
+		pEnd = s + pDraw->iWidth;
+		x = 0;
+		iCount = 0; // count non-transparent pixels
+		while (x < pDraw->iWidth) {
+			c = ucTransparent-1;
+			d = usTemp;
+			while (c != ucTransparent && s < pEnd) {
+				c = *s++;
+				if (c == ucTransparent) // done, stop
+				{
+					s--; // back up to treat it like transparent
+				}
+				else // opaque
+				{
+					*d++ = usPalette[c];
+					iCount++;
+				}
+			} // while looking for opaque pixels
+			if (iCount) { // any opaque pixels?
+				for(int xOffset = 0; xOffset < iCount; xOffset++ ){
+					#ifdef USE_LCD
+						tft.drawPixel(x + xOffset, y, usTemp[xOffset]);
+					#endif
+					#ifdef USE_HUB75
+						display->drawPixel(off_x+x + xOffset, off_y+y, usTemp[xOffset]);
+					#endif
+				}
+				x += iCount;
+				iCount = 0;
+			}
+			// no, look for a run of transparent pixels
+			c = ucTransparent;
+			while (c == ucTransparent && s < pEnd) {
+				c = *s++;
+				if (c == ucTransparent)
+					iCount++;
+				else
+					s--; 
+			}
+			if (iCount) {
+				x += iCount; // skip these
+				iCount = 0;
+			}
+		}
+	} else {
+		s = pDraw->pPixels;
+		// Translate the 8-bit pixels through the RGB565 palette (already byte reversed)
+		for (x=0; x<pDraw->iWidth; x++) {
+			#ifdef USE_LCD
+				tft.drawPixel(x, y, usPalette[*s++]);
+			#endif
+			#ifdef USE_HUB75
+				display->drawPixel(off_x+x, off_y+y, usPalette[*s++]);
+			#endif
+		}
+	}
+}
+
+#endif
 
 void parseTwitchData(String data, t_param *ret) {
 	uint32_t i=0;
@@ -102,26 +204,91 @@ void pngle_on_draw(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t 
 	uint16_t color = (rgba[0] << 8 & 0xf800) | (rgba[1] << 3 & 0x07e0) | (rgba[2] >> 3 & 0x001f);
 	if (rgba[3]) {
 		#ifdef USE_LCD
-			tft.fillRect(x*3, y*3, w*3, h*3, color);
+			tft.fillRect(x*2, y*2, w*2, h*2, color);
 		#endif
 		#ifdef USE_HUB75
 			display->fillRect(off_x+x, off_y+y, w, h, color);
 		#endif
-		// buffer_img[x+y*56] = color;
 	} else {
 		#ifdef USE_LCD
-			tft.fillRect(x*3, y*3, w*3, h*3, 0x0000);
+			tft.fillRect(x*2, y*2, w*2, h*2, 0x0000);
 		#endif
 		#ifdef USE_HUB75
 			display->fillRect(off_x+x, off_y+y, w, h, 0x0000);
 		#endif
-		// buffer_img[x+y*56] = 0;
 	}
 }
 
 void pngle_on_init(pngle_t *pngle, uint32_t w, uint32_t h) {
-	off_x = (MATRIX_W - w) / 2;
-	off_y = (MATRIX_H - h) / 2;
+	#ifdef USE_HUB75
+		off_x = (MATRIX_W - w) / 2;
+		off_y = (MATRIX_H - h) / 2;
+	#else
+		off_x = 0;
+		off_x = 0;
+	#endif
+}
+
+int download_http(const char *url, const char* emote) {
+	char buff[200];
+	sprintf(buff, url, emote, STRINGIZE_VALUE_OF(EMOTE_SIZE));
+	Serial.printf("url = '%s'\n", buff);
+	
+	http.begin(buff, root_ca);
+	return http.GET();
+}
+
+void download_png(size_t len, WiFiClient *stream) {
+	gif_playing = 0;
+	pngle_t *pngle = pngle_new();
+
+	#ifdef USE_LCD
+		tft.fillScreen(TFT_BLACK);
+	#endif
+	#ifdef USE_HUB75
+		display->clearScreen();
+	#endif
+
+	pngle_set_init_callback(pngle, pngle_on_init);
+	pngle_set_draw_callback(pngle, pngle_on_draw);
+
+	uint8_t buf[1024];
+	int remain = 0;
+	
+	while (http.connected() && (len > 0 || len == -1)) {
+		size_t size = stream->available();
+		if (!size) {
+			delay(1);
+			continue;
+		}
+
+		if (size > sizeof(buf) - remain)
+			size = sizeof(buf) - remain;
+
+		int c = stream->readBytes(buf + remain, size);
+		if (c > 0) {
+			int fed = pngle_feed(pngle, buf, remain + c);
+			if (fed < 0) {
+				// tft.fillScreen(TFT_BLACK);
+				// tft.printf("ERROR: %s\n", pngle_error(pngle));
+				break;
+			} else
+				len -= c;
+
+			remain = remain + c - fed;
+			if (remain > 0)
+				memmove(buf, buf + fed, remain);
+		} else
+			delay(1);
+	}
+
+	pngle_destroy(pngle);
+	#ifdef USE_HUB75
+		display->flipDMABuffer();
+	#endif
+	#ifdef USE_LCD
+		digitalWrite(led, LOW);
+	#endif
 }
 
 void irc_callback(IRCMessage ircMessage) {
@@ -130,7 +297,7 @@ void irc_callback(IRCMessage ircMessage) {
 		
 		Serial.printf("<%s> %s\n", ircMessage.nick.c_str(), ircMessage.text.c_str());
 
-		#ifdef USE_TFT
+		#ifdef USE_LCD
 			digitalWrite(led, HIGH);
 		#endif
 
@@ -143,70 +310,57 @@ void irc_callback(IRCMessage ircMessage) {
 		if (emotes != "") {
 			Serial.printf("emotes: %s\n", emotes.c_str());
 
-			char buff[200];
 			String str = emotes.substring(0, emotes.indexOf(":")); // get the ID of the first emote
-			sprintf(buff, "https://static-cdn.jtvnw.net/emoticons/v2/%s/static/light/%s", str.c_str(), STRINGIZE_VALUE_OF(EMOTE_SIZE));
-			Serial.printf("url = '%s'\n", buff);
 			
-			http.begin(buff, root_ca);
-			int code = http.GET();
+			int code = download_http(CDN_URL_DEFAULT, str.c_str());
+
 			if (code == 200 || code == 304) {
-				// Serial.printf("content-type: %s\n", http.header("content-type").c_str());
+
 				int len = http.getSize();
+				Serial.printf("len = '%d'\n", len);
 
 				WiFiClient *stream = http.getStreamPtr();
 
-				pngle_t *pngle = pngle_new();
+				int c = stream->peek();
 
-				#ifdef USE_LCD
-					tft.fillScreen(TFT_BLACK);
-				#endif
-				#ifdef USE_HUB75
-					display->clearScreen();
-				#endif
-
-				pngle_set_init_callback(pngle, pngle_on_init);
-				pngle_set_draw_callback(pngle, pngle_on_draw);
-
-				uint8_t buf[1024];
-				int remain = 0;
-				
-				while (http.connected() && (len > 0 || len == -1)) {
-					size_t size = stream->available();
-					if (!size) {
-						delay(1);
-						continue;
-					}
-
-					if (size > sizeof(buf) - remain)
-						size = sizeof(buf) - remain;
-
-					int c = stream->readBytes(buf + remain, size);
-					if (c > 0) {
-						int fed = pngle_feed(pngle, buf, remain + c);
-						if (fed < 0) {
-							// tft.fillScreen(TFT_BLACK);
-							// tft.printf("ERROR: %s\n", pngle_error(pngle));
-							break;
-						} else
-							len -= c;
-
-						remain = remain + c - fed;
-						if (remain > 0)
-							memmove(buf, buf + fed, remain);
-					} else
-						delay(1);
+				if (c == 137) {  // PNG
+					download_png(len, stream);
 				}
+				#ifdef USE_GIF
+				else if (c == 'G') { // GIF 
+					Serial.printf("GIF\n");
+					gif.close();
+					if (gif_ptr)
+						free(gif_ptr);
+					#ifdef BOARD_HAS_PSRAM
+						gif_ptr = (uint8_t*)ps_malloc(len);
+					#else
+						gif_ptr = (uint8_t*)malloc(len);
+					#endif
+					if (gif_ptr) {
+						stream->readBytes(gif_ptr, len);
+						if (gif.open(gif_ptr, len, GIFDraw)) {
+							Serial.printf("Gif open\n");
+							gif_playing = 1;
+							off_x = (MATRIX_W - gif.getCanvasWidth()) / 2;
+							off_y = (MATRIX_H - gif.getCanvasHeight()) / 2;
+						}
+					} else {
+						Serial.printf("Can't allocate space for GIF\n");
+						http.end();
+						int code = download_http(CDN_URL_PNG, str.c_str());
 
-				pngle_destroy(pngle);
+						if (code == 200 || code == 304) {
+							int len = http.getSize();
+							Serial.printf("len = '%d'\n", len);
+
+							WiFiClient *stream = http.getStreamPtr();
+							download_png(len, stream);
+						}
+					}
+				}
+				#endif
 				http.end();
-				// tft.drawBitmap(0, 0, (const uint8_t *)buffer_img, 56, 56, 0xA815);
-				#ifdef USE_HUB75
-					display->flipDMABuffer();
-				#endif
-				#ifdef USE_TFT
-					digitalWrite(led, LOW);
-				#endif
 			}
 		}
 	}
@@ -235,7 +389,7 @@ void setup() {
 	Serial.begin(115200);
 	preferences.begin("emotes", false);
 
-	#ifdef USE_TFT
+	#ifdef USE_LCD
 		pinMode(led, OUTPUT);
 		pinMode(backlight, OUTPUT);
 		digitalWrite(backlight, 1);
@@ -289,8 +443,8 @@ void setup() {
 			_pins // pin mapping
 		);
 
-		mxconfig.double_buff = true; // Turn of double buffer
-		mxconfig.clkphase = true;
+		// mxconfig.double_buff = true; // Turn of double buffer
+		// mxconfig.clkphase = true;
 
 		// OK, now we can create our matrix object
 		display = new MatrixPanel_I2S_DMA(mxconfig);
@@ -299,6 +453,10 @@ void setup() {
 	#endif
 
 	Serial.println("...Starting Display");
+
+	#ifdef USE_GIF
+		gif.begin(LITTLE_ENDIAN_PIXELS);
+	#endif
 }
 
 
@@ -315,6 +473,10 @@ void loop() {
 		}
 		return;
 	}
+	#ifdef USE_GIF
+		if (gif_playing)
+			gif.playFrame(true, NULL);
+	#endif
 	client.loop();
 	wifiManager.process();
 }
