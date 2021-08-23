@@ -136,7 +136,8 @@ void GIFDraw(GIFDRAW *pDraw) {
 	// 		if (iCount) { // any opaque pixels?
 	// 			for(int xOffset = 0; xOffset < iCount; xOffset++ ){
 	// 				#ifdef USE_LCD
-	// 					tft.drawPixel(x + xOffset, y, usTemp[xOffset]);
+	// 					// tft.drawPixel(x + xOffset, y, usTemp[xOffset]);
+	// 					tft.fillRect(off_x+((x+xOffset)*SCALE), off_y+(y*SCALE), SCALE, SCALE, usPalette[*s++]);
 	// 				#endif
 	// 				#ifdef USE_HUB75
 	// 					display->drawPixel(off_x+x + xOffset, off_y+y, usTemp[xOffset]);
@@ -568,7 +569,7 @@ void setup() {
 
 	// wifiManager.setParamsPage(true);
 	wifiManager.setCountry("US");
-	// wifiManager.setHostname(hostname);
+	wifiManager.setHostname("matrix-emote");
 
 
 	bool rest = wifiManager.autoConnect("Twitch_Emote");
@@ -593,6 +594,7 @@ void setup() {
 		tft.setRotation(3);
 		// tft.setSwapBytes(false);
 		tft.initDMA();
+		tft.fillScreen(TFT_BLACK);
 	#endif
 	#ifdef USE_HUB75
 		HUB75_I2S_CFG::i2s_pins _pins = {R1_PIN, G1_PIN, B1_PIN, R2_PIN, G2_PIN, B2_PIN, A_PIN, B_PIN, C_PIN, D_PIN, E_PIN, LAT_PIN, OE_PIN, CLK_PIN};
