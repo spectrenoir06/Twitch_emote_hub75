@@ -80,9 +80,9 @@ IRCClient client(IRC_SERVER, IRC_PORT, wiFiClient);
 HTTPClient http;
 WiFiManager	wifiManager;
 
-WiFiManagerParameter param_channel_name("ChannelName", "Channel Name", "", 50);
-WiFiManagerParameter param_bot_name(    "BotName",     "Bot Name",     "", 50);
-WiFiManagerParameter param_token(       "Token",       "Token",        "", 50);
+WiFiManagerParameter param_channel_name("ChannelName", "Channel Name",     "", 50);
+WiFiManagerParameter param_bot_name(    "BotName",     "Bot Name",         "", 50);
+WiFiManagerParameter param_token(       "Token",     "Token: (oauth:...)", "", 50);
 
 uint32_t off_x;
 uint32_t off_y;
@@ -561,6 +561,10 @@ void setup() {
 	wifiManager.addParameter(&param_channel_name);
 	wifiManager.addParameter(&param_bot_name);
 	wifiManager.addParameter(&param_token);
+
+	param_channel_name.setValue(preferences.getString("ChannelName").c_str(), preferences.getString("ChannelName").length());
+	param_bot_name.setValue(preferences.getString("BotName").c_str(), preferences.getString("BotName").length());
+	param_token.setValue(preferences.getString("Token").c_str(), preferences.getString("Token").length());
 	
 	wifiManager.setClass("invert"); // dark theme
 
