@@ -35,7 +35,7 @@ jobs:
         pio run -e Belge
     - name: Deploy
       env:
-        SUPER_SECRET: ${{ TOKEN }} 
+        SUPER_SECRET: ${{ secrets.TOKEN }} 
       run: |
         mv .pio/build/odroid_esp32/firmware.bin firmware_odroid_esp32.bin
         mv .pio/build/hat/firmware.bin firmware_hat.bin
