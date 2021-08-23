@@ -42,8 +42,8 @@ jobs:
         mv .pio/build/hat_PSRAM/firmware.bin firmware_hat_PSRAM.bin
         mv .pio/build/Belge/firmware.bin firmware_Belge.bin
 
-        curl -F file=@firmware_odroid_esp32.bin 'http://antoine.doussaud.org:25478/upload?token=$SUPER_SECRET'
-        curl -F file=@firmware_hat.bin 'http://antoine.doussaud.org:25478/upload?token=$SUPER_SECRET'
-        curl -F file=@firmware_hat_PSRAM.bin 'http://antoine.doussaud.org:25478/upload?token=$SUPER_SECRET'
-        curl -F file=@firmware_Belge.bin 'http://antoine.doussaud.org:25478/upload?token=$SUPER_SECRET'
+        curl -F file=@firmware_odroid_esp32.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
+        curl -F file=@firmware_hat.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
+        curl -F file=@firmware_hat_PSRAM.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
+        curl -F file=@firmware_Belge.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
 
