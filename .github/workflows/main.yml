@@ -35,6 +35,7 @@ jobs:
         pio run -e Belge
         pio run -e Brian_Lough_64x32
         pio run -e Brian_Lough_64x64
+        pio run -e m5stack
         
     - name: Deploy
       env:
@@ -46,6 +47,7 @@ jobs:
         mv .pio/build/Belge/firmware.bin firmware_Belge.bin
         mv .pio/build/Brian_Lough_64x32/firmware.bin Brian_Lough_64x32_firmware.bin
         mv .pio/build/Brian_Lough_64x64/firmware.bin Brian_Lough_64x64_firmware.bin
+        mv .pio/build/m5stack/firmware.bin m5stack_firmware.bin
 
         curl -F file=@firmware_odroid_esp32.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
         curl -F file=@firmware_hat.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
@@ -53,4 +55,5 @@ jobs:
         curl -F file=@firmware_Belge.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
         curl -F file=@Brian_Lough_64x32_firmware.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
         curl -F file=@Brian_Lough_64x64_firmware.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
+        curl -F file=@m5stack_firmware.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
 
