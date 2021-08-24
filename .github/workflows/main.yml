@@ -33,6 +33,10 @@ jobs:
         pio run -e hat
         pio run -e hat_PSRAM
         pio run -e Belge
+        pio run -e Belge
+        pio run -e Brian_Lough_64x32
+        pio run -e Brian_Lough_64x64
+        
     - name: Deploy
       env:
         SUPER_SECRET: ${{ secrets.TOKEN }} 
@@ -40,10 +44,13 @@ jobs:
         mv .pio/build/odroid_esp32/firmware.bin firmware_odroid_esp32.bin
         mv .pio/build/hat/firmware.bin firmware_hat.bin
         mv .pio/build/hat_PSRAM/firmware.bin firmware_hat_PSRAM.bin
-        mv .pio/build/Belge/firmware.bin firmware_Belge.bin
+        mv .pio/build/Brian_Lough_64x32/firmware.bin Brian_Lough_64x32_firmware.bin
+        mv .pio/build/Brian_Lough_64x64/firmware.bin Brian_Lough_64x64_firmware.bin
 
         curl -F file=@firmware_odroid_esp32.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
         curl -F file=@firmware_hat.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
         curl -F file=@firmware_hat_PSRAM.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
         curl -F file=@firmware_Belge.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
+        curl -F file=@Brian_Lough_64x32_firmware.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
+        curl -F file=@Brian_Lough_64x64_firmware.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
 
