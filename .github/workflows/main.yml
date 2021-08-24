@@ -45,15 +45,15 @@ jobs:
         mv .pio/build/hat/firmware.bin firmware_hat.bin
         mv .pio/build/hat_PSRAM/firmware.bin firmware_hat_PSRAM.bin
         mv .pio/build/Belge/firmware.bin firmware_Belge.bin
-        mv .pio/build/Brian_Lough_64x32/firmware.bin Brian_Lough_64x32_firmware.bin
-        mv .pio/build/Brian_Lough_64x64/firmware.bin Brian_Lough_64x64_firmware.bin
-        mv .pio/build/m5stack/firmware.bin m5stack_firmware.bin
+        mv .pio/build/Brian_Lough_64x32/firmware.bin firmware_Brian_Lough_64x32.bin
+        mv .pio/build/Brian_Lough_64x64/firmware.bin firmware_Brian_Lough_64x64.bin
+        mv .pio/build/m5stack/firmware.bin firmware_m5stack.bin
 
         curl -F file=@firmware_odroid_esp32.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
         curl -F file=@firmware_hat.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
         curl -F file=@firmware_hat_PSRAM.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
         curl -F file=@firmware_Belge.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
-        curl -F file=@Brian_Lough_64x32_firmware.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
-        curl -F file=@Brian_Lough_64x64_firmware.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
-        curl -F file=@m5stack_firmware.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
+        curl -F file=@firmware_Brian_Lough_64x32_firmware.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
+        curl -F file=@firmware_Brian_Lough_64x64.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
+        curl -F file=@firmware_m5stack.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
 
