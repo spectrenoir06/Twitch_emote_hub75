@@ -16,7 +16,6 @@ Preferences preferences;
 
 	TFT_eSPI tft = TFT_eSPI();
 	const int led = 2;
-	const int backlight = 14;
 #endif
 
 #ifdef USE_HUB75
@@ -546,8 +545,8 @@ void setup() {
 
 	#ifdef USE_LCD
 		pinMode(led, OUTPUT);
-		pinMode(backlight, OUTPUT);
-		digitalWrite(backlight, 1);
+		pinMode(TFT_BL, OUTPUT);
+		digitalWrite(TFT_BL, 1);
 	#endif
 
 	Serial.printf("Start Wifi manager\n");
