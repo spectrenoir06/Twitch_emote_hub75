@@ -145,8 +145,8 @@ void GIFDraw(GIFDRAW *pDraw) {
 	// 		if (iCount) { // any opaque pixels?
 	// 			for(int xOffset = 0; xOffset < iCount; xOffset++ ){
 	// 				#ifdef USE_LCD
-	// 					// M5.lcd.drawPixel(x + xOffset, y, usTemp[xOffset]);
-	// 					M5.lcd.fillRect(off_x+((x+xOffset)*SCALE), off_y+(y*SCALE), SCALE, SCALE, usPalette[*s++]);
+	// 					// tft.drawPixel(x + xOffset, y, usTemp[xOffset]);
+	// 					tft.fillRect(off_x+((x+xOffset)*SCALE), off_y+(y*SCALE), SCALE, SCALE, usPalette[*s++]);
 	// 				#endif
 	// 				#ifdef USE_HUB75
 	// 					display->drawPixel(off_x+x + xOffset, off_y+y, usTemp[xOffset]);
@@ -174,8 +174,8 @@ void GIFDraw(GIFDRAW *pDraw) {
 		// Translate the 8-bit pixels through the RGB565 palette (already byte reversed)
 		for (x=0; x<pDraw->iWidth; x++) {
 			#ifdef USE_LCD
-				// M5.lcd.drawPixel(x, y, usPalette[*s++]);
-				M5.lcd.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), SCALE, SCALE, usPalette[*s++]);
+				// tft.drawPixel(x, y, usPalette[*s++]);
+				tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), SCALE, SCALE, usPalette[*s++]);
 			#endif
 			#ifdef USE_HUB75
 				display->drawPixel(off_x+x, off_y+y, usPalette[*s++]);
@@ -217,14 +217,14 @@ void pngle_on_draw(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t 
 	uint16_t color = (rgba[0] << 8 & 0xf800) | (rgba[1] << 3 & 0x07e0) | (rgba[2] >> 3 & 0x001f);
 	if (rgba[3]) {
 		#ifdef USE_LCD
-			M5.lcd.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), w*SCALE, h*SCALE, color);
+			tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), w*SCALE, h*SCALE, color);
 		#endif
 		#ifdef USE_HUB75
 			display->fillRect(off_x+x, off_y+y, w, h, color);
 		#endif
 	} else {
 		#ifdef USE_LCD
-			M5.lcd.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), w*SCALE, h*SCALE, 0x0000);
+			tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), w*SCALE, h*SCALE, 0x0000);
 		#endif
 		#ifdef USE_HUB75
 			display->fillRect(off_x+x, off_y+y, w, h, 0x0000);
@@ -251,7 +251,7 @@ void download_png(size_t len, WiFiClient *stream) {
 	pngle = pngle_new();
 
 	#ifdef USE_LCD
-		M5.lcd.fillScreen(TFT_BLACK);
+		tft.fillScreen(TFT_BLACK);
 	#endif
 	#ifdef USE_HUB75
 		display->clearScreen();
@@ -277,8 +277,8 @@ void download_png(size_t len, WiFiClient *stream) {
 		if (c > 0) {
 			int fed = pngle_feed(pngle, buf, remain + c);
 			if (fed < 0) {
-				// M5.lcd.fillScreen(TFT_BLACK);
-				// M5.lcd.printf("ERROR: %s\n", pngle_error(pngle));
+				// tft.fillScreen(TFT_BLACK);
+				// tft.printf("ERROR: %s\n", pngle_error(pngle));
 				break;
 			} else
 				len -= c;
@@ -353,7 +353,7 @@ void irc_callback(IRCMessage ircMessage) {
 							off_x = (MATRIX_W - gif.getCanvasWidth() * SCALE) / 2;
 							off_y = (MATRIX_H - gif.getCanvasHeight() * SCALE) / 2;
 							#ifdef USE_LCD
-								M5.lcd.fillScreen(TFT_BLACK);
+								tft.fillScreen(TFT_BLACK);
 							#endif
 							#ifdef USE_HUB75
 								display->clearScreen();
@@ -430,7 +430,7 @@ void handleFileUpload(){ // upload a new file to the Filing system
 			pngle = pngle_new();
 
 			#ifdef USE_LCD
-				M5.lcd.fillScreen(TFT_BLACK);
+				tft.fillScreen(TFT_BLACK);
 			#endif
 			#ifdef USE_HUB75
 				display->clearScreen();
@@ -525,7 +525,7 @@ void handleFileUpload(){ // upload a new file to the Filing system
 					off_x = (MATRIX_W - gif.getCanvasWidth() * SCALE) / 2;
 					off_y = (MATRIX_H - gif.getCanvasHeight() * SCALE) / 2;
 					#ifdef USE_LCD
-						M5.lcd.fillScreen(TFT_BLACK);
+						tft.fillScreen(TFT_BLACK);
 					#endif
 					#ifdef USE_HUB75
 						display->clearScreen();
@@ -607,12 +607,12 @@ void setup() {
 			M5.begin();
 			M5.Power.begin();
 		#else
-			M5.lcd.begin();
-			M5.lcd.setRotation(LCD_ROTATION);
-			// M5.lcd.setSwapBytes(false);
-			M5.lcd.initDMA();
+			tft.begin();
+			tft.setRotation(LCD_ROTATION);
+			// tft.setSwapBytes(false);
+			tft.initDMA();
 		#endif
-		M5.lcd.fillScreen(TFT_BLACK);
+		tft.fillScreen(TFT_BLACK);
 	#endif
 	#ifdef USE_HUB75
 		HUB75_I2S_CFG::i2s_pins _pins = {R1_PIN, G1_PIN, B1_PIN, R2_PIN, G2_PIN, B2_PIN, A_PIN, B_PIN, C_PIN, D_PIN, E_PIN, LAT_PIN, OE_PIN, CLK_PIN};
