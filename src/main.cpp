@@ -93,8 +93,8 @@ WiFiManagerParameter param_channel_name("ChannelName", "Channel Name",     "?", 
 WiFiManagerParameter param_bot_name(    "BotName",     "Bot Name",         "?", 50);
 WiFiManagerParameter param_token(       "Token",       "Token: (oauth:...)", "?", 50);
 
-uint32_t off_x;
-uint32_t off_y;
+int off_x;
+int off_y;
 pngle_t *pngle;
 
 #ifdef USE_GIF
@@ -233,8 +233,8 @@ void pngle_on_draw(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t 
 }
 
 void pngle_on_init(pngle_t *pngle, uint32_t w, uint32_t h) {
-	off_x = (MATRIX_W - w*SCALE) / 2;
-	off_y = (MATRIX_H - h*SCALE) / 2;
+	off_x = ((int)MATRIX_W - (int)w) / 2;
+	off_y = ((int)MATRIX_H - (int)h) / 2;
 }
 
 int download_http(const char *url, const char* emote) {
