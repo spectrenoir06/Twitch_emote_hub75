@@ -27,7 +27,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install --upgrade platformio
-    - name: Run odroid_esp32
+    - name: Build odroid_esp32
       run: pio run -e odroid_esp32
     - name: Build hat
       run: pio run -e hat
