@@ -57,7 +57,7 @@ jobs:
         curl -sSF file=@firmware_Brian_Lough_64x64.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
         curl -sSF file=@firmware_m5stack.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
 
-        echo `date '+%F %T'`" git:"`git rev-parse --short HEAD` > emote_matrix.info
+        echo `TZ="Europe/Paris" date '+%F %T'`" git:"`git rev-parse --short HEAD` > emote_matrix.info
         curl -sSF file=@emote_matrix.info 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
 
 
