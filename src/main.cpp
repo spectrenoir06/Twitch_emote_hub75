@@ -13,6 +13,7 @@ Preferences preferences;
 #ifdef USE_M5
 	#include <M5Stack.h>
 	#define tft M5.Lcd
+	#define drawPixel(a, b, c) M5.Lcd.setAddrWindow(a, b, a, b); M5.Lcd.pushColor(c)
 	#define USE_LCD
 #endif
 
@@ -219,14 +220,22 @@ void pngle_on_draw(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t 
 	uint16_t color = (rgba[0] << 8 & 0xf800) | (rgba[1] << 3 & 0x07e0) | (rgba[2] >> 3 & 0x001f);
 	if (rgba[3]) {
 		#ifdef USE_LCD
-			tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), w*SCALE, h*SCALE, color);
+			#if SCALE == 1
+				drawPixel(off_x+x, off_y+y, color);
+			#else
+				tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), w*SCALE, h*SCALE, color);
+			#endif
 		#endif
 		#ifdef USE_HUB75
 			display->fillRect(off_x+x, off_y+y, w, h, color);
 		#endif
 	} else {
 		#ifdef USE_LCD
-			tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), w*SCALE, h*SCALE, 0x0000);
+			#if SCALE == 1
+				drawPixel(off_x+x, off_y+y, color);
+			#else
+				tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), w*SCALE, h*SCALE, 0x0000);
+			#endif
 		#endif
 		#ifdef USE_HUB75
 			display->fillRect(off_x+x, off_y+y, w, h, 0x0000);
