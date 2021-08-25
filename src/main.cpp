@@ -10,12 +10,22 @@
 
 Preferences preferences;
 
-#ifdef USE_LCD
-	#include <SPI.h>
-	#include <TFT_eSPI.h>
+#ifdef USE_M5
+	#include <M5Stack.h>
+	#define tft M5.Lcd
+	#define USE_LCD
+#endif
 
-	TFT_eSPI tft = TFT_eSPI();
-	const int led = 2;
+#ifdef USE_LCD
+	#ifndef USE_M5
+		#include <SPI.h>
+		#include <TFT_eSPI.h>
+
+		TFT_eSPI tft = TFT_eSPI();
+	#endif
+	#ifdef USE_LED
+		const int led = 2;
+	#endif
 #endif
 
 #ifdef USE_HUB75
@@ -79,9 +89,9 @@ IRCClient client(IRC_SERVER, IRC_PORT, wiFiClient);
 HTTPClient http;
 WiFiManager	wifiManager;
 
-WiFiManagerParameter param_channel_name("ChannelName", "Channel Name",     "", 50);
-WiFiManagerParameter param_bot_name(    "BotName",     "Bot Name",         "", 50);
-WiFiManagerParameter param_token(       "Token",     "Token: (oauth:...)", "", 50);
+WiFiManagerParameter param_channel_name("ChannelName", "Channel Name",     "?", 50);
+WiFiManagerParameter param_bot_name(    "BotName",     "Bot Name",         "?", 50);
+WiFiManagerParameter param_token(       "Token",       "Token: (oauth:...)", "?", 50);
 
 uint32_t off_x;
 uint32_t off_y;
@@ -135,8 +145,8 @@ void GIFDraw(GIFDRAW *pDraw) {
 	// 		if (iCount) { // any opaque pixels?
 	// 			for(int xOffset = 0; xOffset < iCount; xOffset++ ){
 	// 				#ifdef USE_LCD
-	// 					// tft.drawPixel(x + xOffset, y, usTemp[xOffset]);
-	// 					tft.fillRect(off_x+((x+xOffset)*SCALE), off_y+(y*SCALE), SCALE, SCALE, usPalette[*s++]);
+	// 					// M5.lcd.drawPixel(x + xOffset, y, usTemp[xOffset]);
+	// 					M5.lcd.fillRect(off_x+((x+xOffset)*SCALE), off_y+(y*SCALE), SCALE, SCALE, usPalette[*s++]);
 	// 				#endif
 	// 				#ifdef USE_HUB75
 	// 					display->drawPixel(off_x+x + xOffset, off_y+y, usTemp[xOffset]);
@@ -164,8 +174,8 @@ void GIFDraw(GIFDRAW *pDraw) {
 		// Translate the 8-bit pixels through the RGB565 palette (already byte reversed)
 		for (x=0; x<pDraw->iWidth; x++) {
 			#ifdef USE_LCD
-				// tft.drawPixel(x, y, usPalette[*s++]);
-				tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), SCALE, SCALE, usPalette[*s++]);
+				// M5.lcd.drawPixel(x, y, usPalette[*s++]);
+				M5.lcd.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), SCALE, SCALE, usPalette[*s++]);
 			#endif
 			#ifdef USE_HUB75
 				display->drawPixel(off_x+x, off_y+y, usPalette[*s++]);
@@ -207,14 +217,14 @@ void pngle_on_draw(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t 
 	uint16_t color = (rgba[0] << 8 & 0xf800) | (rgba[1] << 3 & 0x07e0) | (rgba[2] >> 3 & 0x001f);
 	if (rgba[3]) {
 		#ifdef USE_LCD
-			tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), w*SCALE, h*SCALE, color);
+			M5.lcd.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), w*SCALE, h*SCALE, color);
 		#endif
 		#ifdef USE_HUB75
 			display->fillRect(off_x+x, off_y+y, w, h, color);
 		#endif
 	} else {
 		#ifdef USE_LCD
-			tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), w*SCALE, h*SCALE, 0x0000);
+			M5.lcd.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), w*SCALE, h*SCALE, 0x0000);
 		#endif
 		#ifdef USE_HUB75
 			display->fillRect(off_x+x, off_y+y, w, h, 0x0000);
@@ -241,7 +251,7 @@ void download_png(size_t len, WiFiClient *stream) {
 	pngle = pngle_new();
 
 	#ifdef USE_LCD
-		tft.fillScreen(TFT_BLACK);
+		M5.lcd.fillScreen(TFT_BLACK);
 	#endif
 	#ifdef USE_HUB75
 		display->clearScreen();
@@ -267,8 +277,8 @@ void download_png(size_t len, WiFiClient *stream) {
 		if (c > 0) {
 			int fed = pngle_feed(pngle, buf, remain + c);
 			if (fed < 0) {
-				// tft.fillScreen(TFT_BLACK);
-				// tft.printf("ERROR: %s\n", pngle_error(pngle));
+				// M5.lcd.fillScreen(TFT_BLACK);
+				// M5.lcd.printf("ERROR: %s\n", pngle_error(pngle));
 				break;
 			} else
 				len -= c;
@@ -284,7 +294,7 @@ void download_png(size_t len, WiFiClient *stream) {
 	#ifdef USE_HUB75
 		display->flipDMABuffer();
 	#endif
-	#ifdef USE_LCD
+	#ifdef USE_LED
 		digitalWrite(led, LOW);
 	#endif
 }
@@ -295,7 +305,7 @@ void irc_callback(IRCMessage ircMessage) {
 		
 		Serial.printf("<%s> %s\n", ircMessage.nick.c_str(), ircMessage.text.c_str());
 
-		#ifdef USE_LCD
+		#ifdef USE_LED
 			digitalWrite(led, HIGH);
 		#endif
 
@@ -343,7 +353,7 @@ void irc_callback(IRCMessage ircMessage) {
 							off_x = (MATRIX_W - gif.getCanvasWidth() * SCALE) / 2;
 							off_y = (MATRIX_H - gif.getCanvasHeight() * SCALE) / 2;
 							#ifdef USE_LCD
-								tft.fillScreen(TFT_BLACK);
+								M5.lcd.fillScreen(TFT_BLACK);
 							#endif
 							#ifdef USE_HUB75
 								display->clearScreen();
@@ -365,7 +375,7 @@ void irc_callback(IRCMessage ircMessage) {
 				}
 				#endif
 				http.end();
-				#ifdef USE_LCD
+				#ifdef USE_LED
 					digitalWrite(led, LOW);
 				#endif
 			}
@@ -411,7 +421,7 @@ void handleFileUpload(){ // upload a new file to the Filing system
 		Serial.print("Upload File Name: "); Serial.println(uploadfile.filename);
 		Serial.print("type: "); Serial.println(uploadfile.type);
 
-		#ifdef USE_LCD
+		#ifdef USE_LED
 			digitalWrite(led, HIGH);
 		#endif
 
@@ -420,7 +430,7 @@ void handleFileUpload(){ // upload a new file to the Filing system
 			pngle = pngle_new();
 
 			#ifdef USE_LCD
-				tft.fillScreen(TFT_BLACK);
+				M5.lcd.fillScreen(TFT_BLACK);
 			#endif
 			#ifdef USE_HUB75
 				display->clearScreen();
@@ -495,7 +505,7 @@ void handleFileUpload(){ // upload a new file to the Filing system
 			#ifdef USE_HUB75
 				display->flipDMABuffer();
 			#endif
-			#ifdef USE_LCD
+			#ifdef USE_LED
 				digitalWrite(led, LOW);
 			#endif
 			
@@ -515,7 +525,7 @@ void handleFileUpload(){ // upload a new file to the Filing system
 					off_x = (MATRIX_W - gif.getCanvasWidth() * SCALE) / 2;
 					off_y = (MATRIX_H - gif.getCanvasHeight() * SCALE) / 2;
 					#ifdef USE_LCD
-						tft.fillScreen(TFT_BLACK);
+						M5.lcd.fillScreen(TFT_BLACK);
 					#endif
 					#ifdef USE_HUB75
 						display->clearScreen();
@@ -544,7 +554,9 @@ void setup() {
 	preferences.begin("emotes", false);
 
 	#ifdef USE_LCD
-		pinMode(led, OUTPUT);
+		#ifdef USE_LED
+			pinMode(led, OUTPUT);
+		#endif
 		pinMode(TFT_BL, OUTPUT);
 		digitalWrite(TFT_BL, 1);
 	#endif
@@ -557,14 +569,14 @@ void setup() {
 	wifiManager.setRemoveDuplicateAPs(true);
 	wifiManager.setSaveParamsCallback(setSaveParamsCallback);
 
+	param_channel_name.setValue(preferences.getString("ChannelName", "?").c_str(), 50);
+	param_bot_name.setValue(    preferences.getString("BotName", "?").c_str(),     50);
+	param_token.setValue(       preferences.getString("Token", "?").c_str(),       50);
+
 	wifiManager.addParameter(&param_channel_name);
 	wifiManager.addParameter(&param_bot_name);
 	wifiManager.addParameter(&param_token);
 
-	param_channel_name.setValue(preferences.getString("ChannelName").c_str(), preferences.getString("ChannelName").length());
-	param_bot_name.setValue(preferences.getString("BotName").c_str(), preferences.getString("BotName").length());
-	param_token.setValue(preferences.getString("Token").c_str(), preferences.getString("Token").length());
-	
 	wifiManager.setClass("invert"); // dark theme
 
 	std::vector<const char*> menu = {"wifi", "info", "sep", "update", "restart" };
@@ -574,9 +586,7 @@ void setup() {
 	wifiManager.setCountry("US");
 	wifiManager.setHostname("matrix-emote");
 
-
 	bool rest = wifiManager.autoConnect("Twitch_Emote");
-
 
 	if (rest) {
 		Serial.println("Wifi connected");
@@ -593,11 +603,16 @@ void setup() {
 	start_irc();
 
 	#ifdef USE_LCD
-		tft.begin();
-		tft.setRotation(3);
-		// tft.setSwapBytes(false);
-		tft.initDMA();
-		tft.fillScreen(TFT_BLACK);
+		#ifdef USE_M5
+			M5.begin();
+			M5.Power.begin();
+		#else
+			M5.lcd.begin();
+			M5.lcd.setRotation(LCD_ROTATION);
+			// M5.lcd.setSwapBytes(false);
+			M5.lcd.initDMA();
+		#endif
+		M5.lcd.fillScreen(TFT_BLACK);
 	#endif
 	#ifdef USE_HUB75
 		HUB75_I2S_CFG::i2s_pins _pins = {R1_PIN, G1_PIN, B1_PIN, R2_PIN, G2_PIN, B2_PIN, A_PIN, B_PIN, C_PIN, D_PIN, E_PIN, LAT_PIN, OE_PIN, CLK_PIN};
@@ -648,6 +663,9 @@ void loop() {
 	#endif
 	client.loop();
 	wifiManager.process();
+	#if USE_M5
+		M5.update();
+	#endif
 }
 
 void sendTwitchMessage(String message) {
