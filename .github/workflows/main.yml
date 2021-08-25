@@ -54,13 +54,13 @@ jobs:
         mv .pio/build/Brian_Lough_64x64/firmware.bin firmware_Brian_Lough_64x64.bin
         mv .pio/build/m5stack/firmware.bin firmware_m5stack.bin
 
-        curl -sSF file=@firmware_odroid_esp32.bin $URL_UPLOAD
-        curl -sSF file=@firmware_hat.bin $URL_UPLOAD
-        curl -sSF file=@firmware_hat_PSRAM.bin $URL_UPLOAD
-        curl -sSF file=@firmware_Belge.bin $URL_UPLOAD
-        curl -sSF file=@firmware_Brian_Lough_64x32.bin $URL_UPLOAD
-        curl -sSF file=@firmware_Brian_Lough_64x64.bin $URL_UPLOAD
-        curl -sSF file=@firmware_m5stack.bin $URL_UPLOAD
+        curl -sSF file=@firmware_odroid_esp32.bin "$URL_UPLOAD"
+        curl -sSF file=@firmware_hat.bin "$URL_UPLOAD"
+        curl -sSF file=@firmware_hat_PSRAM.bin "$URL_UPLOAD"
+        curl -sSF file=@firmware_Belge.bin "$URL_UPLOAD"
+        curl -sSF file=@firmware_Brian_Lough_64x32.bin "$URL_UPLOAD"
+        curl -sSF file=@firmware_Brian_Lough_64x64.bin "$URL_UPLOAD"
+        curl -sSF file=@firmware_m5stack.bin "$URL_UPLOAD"
 
         echo `TZ="Europe/Paris" date '+%F %T'`" git:"`git rev-parse --short HEAD` > emote_matrix.info
-        curl -sSF file=@emote_matrix.info $URL_UPLOAD
+        curl -sSF file=@emote_matrix.info "$URL_UPLOAD"

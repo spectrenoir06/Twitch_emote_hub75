@@ -588,7 +588,7 @@ void setup() {
 	wifiManager.setMenu(menu);
 
 	// wifiManager.setParamsPage(true);
-	wifiManager.setCountry("US");
+	wifiManager.setCountry("JP");
 	wifiManager.setHostname("matrix-emote");
 
 	bool rest = wifiManager.autoConnect("Twitch_Emote");
