@@ -545,7 +545,12 @@ void handleFileUpload(){ // upload a new file to the Filing system
 }
 
 void setup() {
-	Serial.begin(115200);
+	#ifdef USE_M5
+		M5.begin();
+		M5.Power.begin();
+	#else
+		Serial.begin(115200);
+	#endif
 	#ifdef BOARD_HAS_PSRAM
 		Serial.printf("esp32 use external RAM\n");
 	#else
@@ -603,10 +608,7 @@ void setup() {
 	start_irc();
 
 	#ifdef USE_LCD
-		#ifdef USE_M5
-			M5.begin();
-			M5.Power.begin();
-		#else
+		#ifndef USE_M5
 			tft.begin();
 			tft.setRotation(LCD_ROTATION);
 			// tft.setSwapBytes(false);
