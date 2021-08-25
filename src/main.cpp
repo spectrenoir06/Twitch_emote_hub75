@@ -350,8 +350,8 @@ void irc_callback(IRCMessage ircMessage) {
 						if (gif.open(gif_ptr, len, GIFDraw)) {
 							Serial.printf("Gif open\n");
 							gif_playing = 1;
-							off_x = (MATRIX_W - gif.getCanvasWidth() * SCALE) / 2;
-							off_y = (MATRIX_H - gif.getCanvasHeight() * SCALE) / 2;
+							off_x = ((int)MATRIX_W - gif.getCanvasWidth() * SCALE) / 2;
+							off_y = ((int)MATRIX_H - gif.getCanvasHeight() * SCALE) / 2;
 							#ifdef USE_LCD
 								tft.fillScreen(TFT_BLACK);
 							#endif
@@ -522,8 +522,8 @@ void handleFileUpload(){ // upload a new file to the Filing system
 				if (gif.open(gif_ptr, uploadfile.totalSize, GIFDraw)) {
 					Serial.printf("Gif open\n");
 					gif_playing = 1;
-					off_x = (MATRIX_W - gif.getCanvasWidth() * SCALE) / 2;
-					off_y = (MATRIX_H - gif.getCanvasHeight() * SCALE) / 2;
+					off_x = ((int)MATRIX_W - gif.getCanvasWidth() * SCALE) / 2;
+					off_y = ((int)MATRIX_H - gif.getCanvasHeight() * SCALE) / 2;
 					#ifdef USE_LCD
 						tft.fillScreen(TFT_BLACK);
 					#endif
