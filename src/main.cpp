@@ -657,6 +657,7 @@ void setup() {
 	#endif
 }
 
+unsigned long next_frame = 0;
 
 void loop() {
 	if (!client.connected() && use_irc) {
@@ -673,8 +674,11 @@ void loop() {
 		return;
 	}
 	#ifdef USE_GIF
-		if (gif_playing)
-			gif.playFrame(true, NULL);
+		if (gif_playing && millis() > next_frame) {
+			int i;
+			gif.playFrame(false, &i);
+			next_frame = millis() + i;
+		}
 	#endif
 	client.loop();
 	wifiManager.process();
