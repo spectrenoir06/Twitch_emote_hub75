@@ -89,6 +89,8 @@ IRCClient client(IRC_SERVER, IRC_PORT, wiFiClient);
 HTTPClient http;
 WiFiManager	wifiManager;
 
+uint8_t use_irc = 1;
+
 WiFiManagerParameter param_channel_name("ChannelName", "Channel Name",     "?", 50);
 WiFiManagerParameter param_bot_name(    "BotName",     "Bot Name",         "?", 50);
 WiFiManagerParameter param_token(       "Token",       "Token: (oauth:...)", "?", 50);
@@ -381,6 +383,16 @@ void irc_callback(IRCMessage ircMessage) {
 			}
 		}
 	}
+	else if (ircMessage.command == "NOTICE") {
+		Serial.println(ircMessage.text);
+		//Improperly formatted auth
+		//Login authentication failed
+		use_irc = 0;
+		Serial.println("Stop IRC client");
+	}
+	else if (ircMessage.command == "JOIN") {
+		Serial.println("Twitch auth OK");
+	}
 }
 
 void start_irc() {
@@ -395,7 +407,7 @@ void start_irc() {
 }
 
 void setSaveParamsCallback() {
-	Serial.println("saving config");
+	Serial.println("Saving config");
 	preferences.putString("ChannelName", param_channel_name.getValue());
 	preferences.putString("BotName",     param_bot_name.getValue());
 	preferences.putString("Token",       param_token.getValue());
@@ -647,14 +659,15 @@ void setup() {
 
 
 void loop() {
-	if (!client.connected()) {
+	if (!client.connected() && use_irc) {
 		Serial.println("Attempting to connect to " + ircChannel);
 		if (client.connect(twitchBotName, "", twitchToken)) {
 			client.sendRaw("JOIN " + ircChannel);
 			client.sendRaw("CAP REQ :twitch.tv/tags twitch.tv/commands");
-			Serial.println("connected and ready to rock");
+			Serial.println("Connected to twitch IRC");
+			Serial.println("Wait for auth...");
 		} else {
-			Serial.println("failed... try again in 5 seconds");
+			Serial.println("Failed... try again in 5 seconds");
 			delay(5000);
 		}
 		return;
