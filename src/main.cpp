@@ -8,6 +8,15 @@
 #define STRINGIZE(x) #x
 #define STRINGIZE_VALUE_OF(x) STRINGIZE(x)
 
+#ifndef OFF_X
+	#define OFF_X 0
+#endif
+
+#ifndef OFF_Y
+	#define OFF_Y 0
+#endif
+
+
 Preferences preferences;
 
 #ifdef USE_M5
@@ -70,8 +79,8 @@ typedef struct s_param {
 #define IRC_SERVER "irc.chat.twitch.tv"
 #define IRC_PORT   6667
 
-#define CDN_URL_GIF "https://static-cdn.jtvnw.net/emoticons/v2/%s/default/light/%s"
-#define CDN_URL_PNG "https://static-cdn.jtvnw.net/emoticons/v2/%s/static/light/%s"
+#define CDN_URL_GIF "https://static-cdn.jtvnw.net/emoticons/v2/%s/default/dark/%s"
+#define CDN_URL_PNG "https://static-cdn.jtvnw.net/emoticons/v2/%s/static/dark/%s"
 
 #ifdef  USE_GIF
 	#define CDN_URL_DEFAULT CDN_URL_GIF
@@ -111,6 +120,7 @@ void GIFDraw(GIFDRAW *pDraw) {
 	uint8_t *s;
 	uint16_t *d, *usPalette, usTemp[320];
 	int x, y;
+	AnimatedGIF *ptr=(AnimatedGIF*)pDraw->pUser;
 
 	usPalette = pDraw->pPalette;
 	y = pDraw->iY + pDraw->y; // current line
@@ -173,17 +183,36 @@ void GIFDraw(GIFDRAW *pDraw) {
 	// 		}
 	// 	}
 	// } else {
-		s = pDraw->pPixels;
+		// s = pDraw->pPixels;
+		int ofx = pDraw->iX;
+		// int ofy = pDraw->iY;
+		// int ofx_2 = ptr->getCanvasWidth()  - (ofx + pDraw->iWidth);
+		// int ofy_2 = ptr->getCanvasHeight() - (ofy + pDraw->iHeight);
 		// Translate the 8-bit pixels through the RGB565 palette (already byte reversed)
-		for (x=0; x<pDraw->iWidth; x++) {
+		// for (x=0; x<ofx; x++) {
+		// 	#ifdef USE_LCD
+		// 		tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), SCALE, SCALE, usPalette[*s++]);
+		// 	#endif
+		// 	#ifdef USE_HUB75
+		// 		display->drawPixel(off_x+x, off_y+y, 0xffff);
+		// 	#endif
+		// }
+		for (x=ofx; x<(pDraw->iWidth+ofx); x++) {
 			#ifdef USE_LCD
-				// tft.drawPixel(x, y, usPalette[*s++]);
 				tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), SCALE, SCALE, usPalette[*s++]);
 			#endif
 			#ifdef USE_HUB75
 				display->drawPixel(off_x+x, off_y+y, usPalette[*s++]);
 			#endif
 		}
+		// for (x=pDraw->iWidth+ofx; x<pDraw->iWidth+ofx+ofx_2; x++) {
+		// 	#ifdef USE_LCD
+		// 		tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), SCALE, SCALE, usPalette[*s++]);
+		// 	#endif
+		// 	#ifdef USE_HUB75
+		// 		display->drawPixel(off_x+x, off_y+y, 0xffff);
+		// 	#endif
+		// }
 	// }
 }
 
@@ -244,8 +273,8 @@ void pngle_on_draw(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t 
 }
 
 void pngle_on_init(pngle_t *pngle, uint32_t w, uint32_t h) {
-	off_x = ((int)MATRIX_W - (int)w) / 2;
-	off_y = ((int)MATRIX_H - (int)h) / 2;
+	off_x = ((int)MATRIX_W - (int)w) / 2 + OFF_X;
+	off_y = ((int)MATRIX_H - (int)h) / 2 + OFF_Y;
 }
 
 int download_http(const char *url, const char* emote) {
@@ -361,8 +390,8 @@ void irc_callback(IRCMessage ircMessage) {
 						if (gif.open(gif_ptr, len, GIFDraw)) {
 							Serial.printf("Gif open\n");
 							gif_playing = 1;
-							off_x = ((int)MATRIX_W - gif.getCanvasWidth() * SCALE) / 2;
-							off_y = ((int)MATRIX_H - gif.getCanvasHeight() * SCALE) / 2;
+							off_x = ((int)MATRIX_W - gif.getCanvasWidth()  * SCALE) / 2 + OFF_X;
+							off_y = ((int)MATRIX_H - gif.getCanvasHeight() * SCALE) / 2 + OFF_Y;
 							#ifdef USE_LCD
 								tft.fillScreen(TFT_BLACK);
 							#endif
@@ -543,8 +572,8 @@ void handleFileUpload(){ // upload a new file to the Filing system
 				if (gif.open(gif_ptr, uploadfile.totalSize, GIFDraw)) {
 					Serial.printf("Gif open\n");
 					gif_playing = 1;
-					off_x = ((int)MATRIX_W - gif.getCanvasWidth() * SCALE) / 2;
-					off_y = ((int)MATRIX_H - gif.getCanvasHeight() * SCALE) / 2;
+					off_x = ((int)MATRIX_W - gif.getCanvasWidth()  * SCALE) / 2 + OFF_X;
+					off_y = ((int)MATRIX_H - gif.getCanvasHeight() * SCALE) / 2 + OFF_Y;
 					#ifdef USE_LCD
 						tft.fillScreen(TFT_BLACK);
 					#endif
@@ -647,11 +676,13 @@ void setup() {
 			_pins         // pin mapping
 		);
 
-		mxconfig.double_buff    = false;                    // use DMA double buffer (twice as much RAM required)
-		mxconfig.driver         = HUB75_I2S_CFG::SHIFTREG; // Matrix driver chip type - default is a plain shift register
-		mxconfig.i2sspeed       = HUB75_I2S_CFG::HZ_10M;   // I2S clock speed
-		mxconfig.clkphase       = true;                    // I2S clock phase
-		mxconfig.latch_blanking = MATRIX_LATCH_BLANK;      // How many clock cycles to blank OE before/after LAT signal change, default is 1 clock
+		mxconfig.double_buff = true;                   // use DMA double buffer (twice as much RAM required)
+		// #ifndef DMA_DOUBLE_BUFF
+		// #endif
+		mxconfig.driver          = HUB75_I2S_CFG::SHIFTREG; // Matrix driver chip type - default is a plain shift register
+		mxconfig.i2sspeed        = HUB75_I2S_CFG::HZ_10M;   // I2S clock speed
+		mxconfig.clkphase        = true;                    // I2S clock phase
+		mxconfig.latch_blanking  = MATRIX_LATCH_BLANK;      // How many clock cycles to blank OE before/after LAT signal change, default is 1 clock
 
 		display = new MatrixPanel_I2S_DMA(mxconfig);
 
@@ -684,11 +715,21 @@ void loop() {
 	}
 	#ifdef USE_GIF
 		if (gif_playing && millis() > next_frame) {
+			int t  = millis();
+			#ifdef USE_HUB75
+				display->clearScreen();
+			#endif
 			int i;
-			gif.playFrame(false, &i);
-			next_frame = millis() + i;
+			// display->fillRect(off_x, off_y, gif.getCanvasWidth(), gif.getCanvasHeight(), 0x0000);
+			gif.playFrame(false, &i, &gif);
+			// Serial.println(i);
+			#ifdef USE_HUB75
+				display->flipDMABuffer();
+			#endif
+			next_frame = t + i;
 		}
 	#endif
+
 	client.loop();
 	wifiManager.process();
 	#if USE_M5
