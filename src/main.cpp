@@ -23,7 +23,7 @@ Preferences preferences;
 #ifdef USE_M5
 	#include <M5Stack.h>
 	#define tft M5.Lcd
-	#define drawPixel(a, b, c) M5.Lcd.setAddrWindow(a, b, a, b); M5.Lcd.pushColor(c)
+	// #define drawPixel(a, b, c) tft.setAddrWindow(a, b, a, b); tft.pushColor(c)
 	#define USE_LCD
 #endif
 
