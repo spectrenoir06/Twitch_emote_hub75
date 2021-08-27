@@ -2,8 +2,9 @@
 #include <WiFiManager.h>
 #include <IRCClient.h>
 #include <HTTPClient.h>
-#include <pngle.h>
 #include <Preferences.h>
+#include <AnimatedGIF.h>
+#include <PNGdec.h>
 
 #define STRINGIZE(x) #x
 #define STRINGIZE_VALUE_OF(x) STRINGIZE(x)
@@ -43,12 +44,6 @@ Preferences preferences;
 	MatrixPanel_I2S_DMA *display = nullptr;
 #endif
 
-#ifdef USE_GIF
-	#include <AnimatedGIF.h>
-	AnimatedGIF gif;
-#endif
-uint8_t gif_playing = 0;
-
 const char* root_ca= \
 "-----BEGIN CERTIFICATE-----\n" \
 "MIIDQTCCAimgAwIBAgITBmyfz5m/jAo54vB4ikPmljZbyjANBgkqhkiG9w0BAQsF\n" \
@@ -82,11 +77,10 @@ typedef struct s_param {
 #define CDN_URL_GIF "https://static-cdn.jtvnw.net/emoticons/v2/%s/default/dark/%s"
 #define CDN_URL_PNG "https://static-cdn.jtvnw.net/emoticons/v2/%s/static/dark/%s"
 
-#ifdef  USE_GIF
-	#define CDN_URL_DEFAULT CDN_URL_GIF
-#else
-	#define CDN_URL_DEFAULT CDN_URL_PNG
-#endif
+#define CDN_URL_DEFAULT CDN_URL_GIF
+
+enum img_mode { DOWNLOAD = 1, PLAY, WAIT};
+
 
 
 String twitchChannelName;
@@ -105,22 +99,66 @@ WiFiManagerParameter param_channel_name("ChannelName", "Channel Name",     "?", 
 WiFiManagerParameter param_bot_name(    "BotName",     "Bot Name",         "?", 50);
 WiFiManagerParameter param_token(       "Token",       "Token: (oauth:...)", "?", 50);
 
-int off_x;
-int off_y;
-pngle_t *pngle;
-
-#ifdef USE_GIF
-
 uint8_t *gif_ptr;
 uint32_t gif_buf_pos = 0;
 
+typedef struct {
+	uint8_t type;
+	uint8_t mode;
+	uint8_t *data;
+	size_t len;
+	int off_x;
+	int off_y;
+	uint32_t end_time;
+} t_img;
+
+
+typedef struct {
+	PNG png;
+	AnimatedGIF gif;
+	// std::queue<t_img> queue;
+	t_img queue[EMOTE_BUFFER_SIZE];
+	uint cursor=0;
+	size_t size=0;
+} t_img_data;
+
+
+t_img_data *imgs_data;
+t_img http_img;
+
+void PNGDraw(PNGDRAW* pDraw) {
+	uint16_t usPixels[320];
+	uint8_t ucMask[40];
+	int y = pDraw->y;
+	t_img* img = (t_img*)pDraw->pUser;
+
+	imgs_data->png.getLineAsRGB565(pDraw, usPixels, PNG_RGB565_LITTLE_ENDIAN, 0x000000);
+	for (int x = 0; x < pDraw->iWidth; x++) {
+		#if SCALE == 1
+			#ifdef USE_HUB75
+				display->drawPixel(img->off_x + x, img->off_y + y, usPixels[x]);
+			#endif
+			#ifdef USE_LCD
+				tft.drawPixel(img->off_x + x, img->off_y + y, usPixels[x]);
+				// drawPixel(img->off_x + x, img->off_y + y, usPixels[x]);
+			#endif
+		#else
+			#ifdef USE_HUB75
+				display->fillRect((img->off_x + (x * SCALE), (img->off_y + (y * SCALE), w * SCALE, h * SCALE, usPixels[x]);
+			#endif
+			#ifdef USE_LCD
+				tft.fillRect(img->off_x+(x*SCALE), img->off_y+(y*SCALE), SCALE, SCALE, usPixels[x]);
+			#endif
+		#endif
+	}
+}
 
 // Draw a line of image directly on the LCD
 void GIFDraw(GIFDRAW *pDraw) {
 	uint8_t *s;
 	uint16_t *d, *usPalette, usTemp[320];
 	int x, y;
-	AnimatedGIF *ptr=(AnimatedGIF*)pDraw->pUser;
+	t_img *img = (t_img*)pDraw->pUser;
 
 	usPalette = pDraw->pPalette;
 	y = pDraw->iY + pDraw->y; // current line
@@ -133,90 +171,17 @@ void GIFDraw(GIFDRAW *pDraw) {
 		}
 		pDraw->ucHasTransparency = 0;
 	}
-	// Apply the new pixels to the main image
-	// if (pDraw->ucHasTransparency) { // if transparency used
-	// 	uint8_t *pEnd, c, ucTransparent = pDraw->ucTransparent;
-	// 	int x, iCount;
-	// 	pEnd = s + pDraw->iWidth;
-	// 	x = 0;
-	// 	iCount = 0; // count non-transparent pixels
-	// 	while (x < pDraw->iWidth) {
-	// 		c = ucTransparent-1;
-	// 		d = usTemp;
-	// 		while (c != ucTransparent && s < pEnd) {
-	// 			c = *s++;
-	// 			if (c == ucTransparent) // done, stop
-	// 			{
-	// 				s--; // back up to treat it like transparent
-	// 			}
-	// 			else // opaque
-	// 			{
-	// 				*d++ = usPalette[c];
-	// 				iCount++;
-	// 			}
-	// 		} // while looking for opaque pixels
-	// 		if (iCount) { // any opaque pixels?
-	// 			for(int xOffset = 0; xOffset < iCount; xOffset++ ){
-	// 				#ifdef USE_LCD
-	// 					// tft.drawPixel(x + xOffset, y, usTemp[xOffset]);
-	// 					tft.fillRect(off_x+((x+xOffset)*SCALE), off_y+(y*SCALE), SCALE, SCALE, usPalette[*s++]);
-	// 				#endif
-	// 				#ifdef USE_HUB75
-	// 					display->drawPixel(off_x+x + xOffset, off_y+y, usTemp[xOffset]);
-	// 				#endif
-	// 			}
-	// 			x += iCount;
-	// 			iCount = 0;
-	// 		}
-	// 		// no, look for a run of transparent pixels
-	// 		c = ucTransparent;
-	// 		while (c == ucTransparent && s < pEnd) {
-	// 			c = *s++;
-	// 			if (c == ucTransparent)
-	// 				iCount++;
-	// 			else
-	// 				s--; 
-	// 		}
-	// 		if (iCount) {
-	// 			x += iCount; // skip these
-	// 			iCount = 0;
-	// 		}
-	// 	}
-	// } else {
-		// s = pDraw->pPixels;
-		int ofx = pDraw->iX;
-		// int ofy = pDraw->iY;
-		// int ofx_2 = ptr->getCanvasWidth()  - (ofx + pDraw->iWidth);
-		// int ofy_2 = ptr->getCanvasHeight() - (ofy + pDraw->iHeight);
-		// Translate the 8-bit pixels through the RGB565 palette (already byte reversed)
-		// for (x=0; x<ofx; x++) {
-		// 	#ifdef USE_LCD
-		// 		tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), SCALE, SCALE, usPalette[*s++]);
-		// 	#endif
-		// 	#ifdef USE_HUB75
-		// 		display->drawPixel(off_x+x, off_y+y, 0xffff);
-		// 	#endif
-		// }
-		for (x=ofx; x<(pDraw->iWidth+ofx); x++) {
-			#ifdef USE_LCD
-				tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), SCALE, SCALE, usPalette[*s++]);
-			#endif
-			#ifdef USE_HUB75
-				display->drawPixel(off_x+x, off_y+y, usPalette[*s++]);
-			#endif
-		}
-		// for (x=pDraw->iWidth+ofx; x<pDraw->iWidth+ofx+ofx_2; x++) {
-		// 	#ifdef USE_LCD
-		// 		tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), SCALE, SCALE, usPalette[*s++]);
-		// 	#endif
-		// 	#ifdef USE_HUB75
-		// 		display->drawPixel(off_x+x, off_y+y, 0xffff);
-		// 	#endif
-		// }
-	// }
-}
+	int ofx = pDraw->iX;
 
-#endif
+	for (x=ofx; x<(pDraw->iWidth+ofx); x++) {
+		#ifdef USE_LCD
+			tft.fillRect(img->off_x+(x*SCALE), img->off_y+(y*SCALE), SCALE, SCALE, usPalette[*s++]);
+		#endif
+		#ifdef USE_HUB75
+			display->drawPixel(img->off_x+x, img->off_y+y, usPalette[*s++]);
+		#endif
+	}
+}
 
 void parseTwitchData(String data, t_param *ret) {
 	uint32_t i=0;
@@ -241,42 +206,6 @@ String get_param(String key, t_param *param, size_t size) {
 	return String();
 }
 
-void pngle_on_draw(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint8_t rgba[4]) {
-	rgba[0] = rgba[0] * (rgba[3] / 255.0);
-	rgba[1] = rgba[1] * (rgba[3] / 255.0);
-	rgba[2] = rgba[2] * (rgba[3] / 255.0);
-
-	uint16_t color = (rgba[0] << 8 & 0xf800) | (rgba[1] << 3 & 0x07e0) | (rgba[2] >> 3 & 0x001f);
-	if (rgba[3]) {
-		#ifdef USE_LCD
-			#if SCALE == 1
-				drawPixel(off_x+x, off_y+y, color);
-			#else
-				tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), w*SCALE, h*SCALE, color);
-			#endif
-		#endif
-		#ifdef USE_HUB75
-			display->fillRect(off_x+x, off_y+y, w, h, color);
-		#endif
-	} else {
-		#ifdef USE_LCD
-			#if SCALE == 1
-				drawPixel(off_x+x, off_y+y, color);
-			#else
-				tft.fillRect(off_x+(x*SCALE), off_y+(y*SCALE), w*SCALE, h*SCALE, 0x0000);
-			#endif
-		#endif
-		#ifdef USE_HUB75
-			display->fillRect(off_x+x, off_y+y, w, h, 0x0000);
-		#endif
-	}
-}
-
-void pngle_on_init(pngle_t *pngle, uint32_t w, uint32_t h) {
-	off_x = ((int)MATRIX_W - (int)w) / 2 + OFF_X;
-	off_y = ((int)MATRIX_H - (int)h) / 2 + OFF_Y;
-}
-
 int download_http(const char *url, const char* emote) {
 	char buff[200];
 	sprintf(buff, url, emote, STRINGIZE_VALUE_OF(EMOTE_SIZE));
@@ -286,57 +215,38 @@ int download_http(const char *url, const char* emote) {
 	return http.GET();
 }
 
-void download_png(size_t len, WiFiClient *stream) {
-	gif_playing = 0;
-	pngle = pngle_new();
+void download_http_data(uint8_t c, size_t len, WiFiClient *stream, String str) {
+	if (c == 'G' || c == 137) { // GIF || PNG
+		if (imgs_data->size < EMOTE_BUFFER_SIZE) {
+			Serial.printf("insert: cursor = %d, size = %d, pos =%d\n", imgs_data->cursor, imgs_data->size, (imgs_data->cursor + imgs_data->size) % EMOTE_BUFFER_SIZE);
+			t_img* img = &imgs_data->queue[(imgs_data->cursor + imgs_data->size) % EMOTE_BUFFER_SIZE];
+			#ifdef BOARD_HAS_PSRAM
+				img->data = (uint8_t*)ps_malloc(len);
+			#else
+				img->data = (uint8_t*)malloc(len);
+			#endif
+			if (img->data) {
+				stream->readBytes(img->data, len);
+				img->type = c;
+				img->len = len;
+				img->mode = WAIT;
+				imgs_data->size++;
+			}
+			else {
+				Serial.printf("Can't allocate space for GIF\n");
+				http.end();
+				int code = download_http(CDN_URL_PNG, str.c_str());
 
-	#ifdef USE_LCD
-		tft.fillScreen(TFT_BLACK);
-	#endif
-	#ifdef USE_HUB75
-		display->clearScreen();
-	#endif
+				if (code == 200 || code == 304) {
+					int len = http.getSize();
+					Serial.printf("len = '%d'\n", len);
 
-	pngle_set_init_callback(pngle, pngle_on_init);
-	pngle_set_draw_callback(pngle, pngle_on_draw);
-
-	uint8_t buf[1024];
-	int remain = 0;
-	
-	while (http.connected() && (len > 0 || len == -1)) {
-		size_t size = stream->available();
-		if (!size) {
-			delay(1);
-			continue;
+					WiFiClient *stream = http.getStreamPtr();
+					download_http_data(stream->peek(), len, stream, str);
+				}
+			}
 		}
-
-		if (size > sizeof(buf) - remain)
-			size = sizeof(buf) - remain;
-
-		int c = stream->readBytes(buf + remain, size);
-		if (c > 0) {
-			int fed = pngle_feed(pngle, buf, remain + c);
-			if (fed < 0) {
-				// tft.fillScreen(TFT_BLACK);
-				// tft.printf("ERROR: %s\n", pngle_error(pngle));
-				break;
-			} else
-				len -= c;
-
-			remain = remain + c - fed;
-			if (remain > 0)
-				memmove(buf, buf + fed, remain);
-		} else
-			delay(1);
 	}
-
-	pngle_destroy(pngle);
-	#ifdef USE_HUB75
-		display->flipDMABuffer();
-	#endif
-	#ifdef USE_LED
-		digitalWrite(led, LOW);
-	#endif
 }
 
 void irc_callback(IRCMessage ircMessage) {
@@ -357,63 +267,13 @@ void irc_callback(IRCMessage ircMessage) {
 
 		if (emotes != "") {
 			Serial.printf("emotes: %s\n", emotes.c_str());
-
 			String str = emotes.substring(0, emotes.indexOf(":")); // get the ID of the first emote
-			
 			int code = download_http(CDN_URL_DEFAULT, str.c_str());
-
 			if (code == 200 || code == 304) {
-
 				int len = http.getSize();
 				Serial.printf("len = '%d'\n", len);
-
 				WiFiClient *stream = http.getStreamPtr();
-
-				int c = stream->peek();
-
-				if (c == 137) {  // PNG
-					download_png(len, stream);
-				}
-				#ifdef USE_GIF
-				else if (c == 'G') { // GIF 
-					Serial.printf("GIF\n");
-					gif.close();
-					if (gif_ptr)
-						free(gif_ptr);
-					#ifdef BOARD_HAS_PSRAM
-						gif_ptr = (uint8_t*)ps_malloc(len);
-					#else
-						gif_ptr = (uint8_t*)malloc(len);
-					#endif
-					if (gif_ptr) {
-						stream->readBytes(gif_ptr, len);
-						if (gif.open(gif_ptr, len, GIFDraw)) {
-							Serial.printf("Gif open\n");
-							gif_playing = 1;
-							off_x = ((int)MATRIX_W - gif.getCanvasWidth()  * SCALE) / 2 + OFF_X;
-							off_y = ((int)MATRIX_H - gif.getCanvasHeight() * SCALE) / 2 + OFF_Y;
-							#ifdef USE_LCD
-								tft.fillScreen(TFT_BLACK);
-							#endif
-							#ifdef USE_HUB75
-								display->clearScreen();
-							#endif
-						}
-					} else {
-						Serial.printf("Can't allocate space for GIF\n");
-						http.end();
-						int code = download_http(CDN_URL_PNG, str.c_str());
-
-						if (code == 200 || code == 304) {
-							int len = http.getSize();
-							Serial.printf("len = '%d'\n", len);
-
-							WiFiClient *stream = http.getStreamPtr();
-							download_png(len, stream);
-						}
-					}
-				}
-				#endif
+				download_http_data(stream->peek(), len, stream, str);
 				http.end();
 				#ifdef USE_LED
 					digitalWrite(led, LOW);
@@ -475,39 +335,18 @@ void handleFileUpload(){ // upload a new file to the Filing system
 			digitalWrite(led, HIGH);
 		#endif
 
-		if (uploadfile.type == "image/png") {
-			gif_playing = 0;
-			pngle = pngle_new();
-
-			#ifdef USE_LCD
-				tft.fillScreen(TFT_BLACK);
-			#endif
-			#ifdef USE_HUB75
-				display->clearScreen();
-			#endif
-
-			pngle_set_init_callback(pngle, pngle_on_init);
-			pngle_set_draw_callback(pngle, pngle_on_draw);
-		}
-		#ifdef USE_GIF
-		else if (uploadfile.type == "image/gif") {
-			Serial.printf("GIF\n");
-			gif_playing = 0;
-			gif_buf_pos = 0;
-			gif.close();
-			if (gif_ptr)
-				free(gif_ptr);
-			#ifdef BOARD_HAS_PSRAM
-				gif_ptr = (uint8_t*)ps_malloc(1);
-			#else
-				gif_ptr = (uint8_t*)malloc(1);
-			#endif
-			if (!gif_ptr) {
-				Serial.printf("Can't allocate space for GIF\n");
+		if (uploadfile.type == "image/gif" || uploadfile.type == "image/png") {
+			if (imgs_data->size < EMOTE_BUFFER_SIZE) {
+				#ifdef BOARD_HAS_PSRAM
+					http_img.data = (uint8_t*)ps_malloc(1);
+				#else
+					http_img.data = (uint8_t*)malloc(1);
+				#endif
+				http_img.len = 0;
+				http_img.type = (uploadfile.type == "image/gif") ? 'G' : 127;
+				http_img.mode = DOWNLOAD;
 			}
-
 		}
-		#endif
 		else {
 			webpage = "";
 			webpage += FPSTR(HTTP_STYLE);
@@ -517,48 +356,44 @@ void handleFileUpload(){ // upload a new file to the Filing system
 			webpage += F("</div'></body'>");
 			wifiManager.server->send(400,"text/html", webpage);
 		}
-
-	}
-	else if (uploadfile.status == UPLOAD_FILE_WRITE) {
-		if (uploadfile.type == "image/png") {
-			pngle_feed(pngle, uploadfile.buf, uploadfile.currentSize);
-		} else if (uploadfile.type == "image/gif") {
-			#ifdef USE_GIF
-				#ifdef BOARD_HAS_PSRAM
-					uint8_t* ptr_tmp = (uint8_t*)ps_realloc(gif_ptr, gif_buf_pos+uploadfile.currentSize);
-				#else
-					uint8_t* ptr_tmp = (uint8_t*)realloc(gif_ptr, gif_buf_pos+uploadfile.currentSize);
-				#endif
-				if (!ptr_tmp) {
-					free(gif_ptr);
-					gif_ptr = 0;
-					Serial.printf("Can't reallocate space for GIF\n");
-					webpage = "";
-					webpage += FPSTR(HTTP_STYLE);
-					webpage += F("<body class='invert'><div class='wrap'>");
-					webpage += F("<h3>File uploaded Error not enought RAM</h3>");
-					webpage += F("<a href='/upload'>[Back]</a><br><br>");
-					webpage += F("</div'></body'>");
-					wifiManager.server->send(400,"text/html", webpage);
-					return;
-				} else {
-					gif_ptr = ptr_tmp;
-					memcpy(gif_ptr+gif_buf_pos, uploadfile.buf, uploadfile.currentSize);
-					gif_buf_pos+=uploadfile.currentSize;
-				}
+	} else if (uploadfile.status == UPLOAD_FILE_WRITE) {
+		// Serial.print("Write: "); Serial.println(uploadfile.currentSize);
+		if (uploadfile.type == "image/gif" || uploadfile.type == "image/png") {
+			#ifdef BOARD_HAS_PSRAM
+				uint8_t* ptr_tmp = (uint8_t*)ps_realloc(http_img.data, http_img.len + uploadfile.currentSize);
+			#else
+				uint8_t* ptr_tmp = (uint8_t*)realloc(http_img.data, http_img.len + uploadfile.currentSize);
 			#endif
+
+			if (!ptr_tmp) {
+				free(gif_ptr);
+				gif_ptr = 0;
+				Serial.printf("Can't reallocate space for GIF\n");
+				webpage = "";
+				webpage += FPSTR(HTTP_STYLE);
+				webpage += F("<body class='invert'><div class='wrap'>");
+				webpage += F("<h3>File uploaded Error not enought RAM</h3>");
+				webpage += F("<a href='/upload'>[Back]</a><br><br>");
+				webpage += F("</div'></body'>");
+				wifiManager.server->send(400,"text/html", webpage);
+				return;
+			} else {
+				http_img.data = ptr_tmp;
+				memcpy(http_img.data + http_img.len, uploadfile.buf, uploadfile.currentSize);
+				http_img.len += uploadfile.currentSize;
+			}
 		}
 	}
 	else if (uploadfile.status == UPLOAD_FILE_END) {
-		if (uploadfile.type == "image/png") {
-			pngle_destroy(pngle);
-			#ifdef USE_HUB75
-				display->flipDMABuffer();
-			#endif
-			#ifdef USE_LED
-				digitalWrite(led, LOW);
-			#endif
-			
+		// Serial.print("END: "); Serial.println(http_img.len);
+		if (uploadfile.type == "image/gif" || uploadfile.type == "image/png") {
+			if (imgs_data->size < EMOTE_BUFFER_SIZE) {
+				Serial.printf("insert: cursor = %d, size = %d, pos =%d\n", imgs_data->cursor, imgs_data->size, (imgs_data->cursor + imgs_data->size) % EMOTE_BUFFER_SIZE);
+				t_img* img = &imgs_data->queue[(imgs_data->cursor + imgs_data->size) % EMOTE_BUFFER_SIZE];
+				http_img.mode = WAIT;
+				memcpy(img, &http_img, sizeof(t_img));
+				imgs_data->size++;
+			}
 			webpage = "";
 			webpage += FPSTR(HTTP_STYLE);
 			webpage += F("<body class='invert'><div class='wrap'>");
@@ -566,33 +401,17 @@ void handleFileUpload(){ // upload a new file to the Filing system
 			webpage += F("<h2>Uploaded File Name: "); webpage += uploadfile.filename+"</h2>";
 			webpage += F("<a href='/upload'>[Back]</a><br><br>");
 			webpage += F("</div'></body'>");
-			wifiManager.server->send(200,"text/html",webpage);
-		} else if (uploadfile.type == "image/gif") {
-			#ifdef USE_GIF
-				if (gif.open(gif_ptr, uploadfile.totalSize, GIFDraw)) {
-					Serial.printf("Gif open\n");
-					gif_playing = 1;
-					off_x = ((int)MATRIX_W - gif.getCanvasWidth()  * SCALE) / 2 + OFF_X;
-					off_y = ((int)MATRIX_H - gif.getCanvasHeight() * SCALE) / 2 + OFF_Y;
-					#ifdef USE_LCD
-						tft.fillScreen(TFT_BLACK);
-					#endif
-					#ifdef USE_HUB75
-						display->clearScreen();
-					#endif
-				}
-				webpage = "";
-				webpage += FPSTR(HTTP_STYLE);
-				webpage += F("<body class='invert'><div class='wrap'>");
-				webpage += F("<h3>File was successfully uploaded</h3>"); 
-				webpage += F("<h2>Uploaded File Name: "); webpage += uploadfile.filename+"</h2>";
-				webpage += F("<a href='/upload'>[Back]</a><br><br>");
-				webpage += F("</div'></body'>");
-				wifiManager.server->send(200,"text/html",webpage);
-			#endif
+			wifiManager.server->send(200,"text/html", webpage);
 		}
 	}
 }
+
+#ifdef USE_HUB75
+	void flip_matrix() {
+		display->flipDMABuffer();
+	}
+#endif
+
 
 void setup() {
 	#ifdef USE_M5
@@ -688,13 +507,19 @@ void setup() {
 
 		display->begin();  // setup display with pins as pre-defined in the library
 		display->setBrightness8(MATRIX_BRIGHNESS); //0-255
+		// display->flipDMABuffer();
 	#endif
 
 	Serial.println("...Starting Display");
 
-	#ifdef USE_GIF
-		gif.begin(LITTLE_ENDIAN_PIXELS);
+	#ifdef BOARD_HAS_PSRAM
+		imgs_data = (t_img_data*)ps_malloc(sizeof(t_img_data));
+	#else
+		imgs_data = (t_img_data*)malloc(sizeof(t_img_data));
 	#endif
+	imgs_data->size = 0;
+	imgs_data->cursor = 0;
+	imgs_data->gif.begin(LITTLE_ENDIAN_PIXELS);
 }
 
 unsigned long next_frame = 0;
@@ -713,22 +538,65 @@ void loop() {
 		}
 		return;
 	}
-	#ifdef USE_GIF
-		if (gif_playing && millis() > next_frame) {
-			int t  = millis();
-			#ifdef USE_HUB75
-				display->clearScreen();
-			#endif
-			int i;
-			// display->fillRect(off_x, off_y, gif.getCanvasWidth(), gif.getCanvasHeight(), 0x0000);
-			gif.playFrame(false, &i, &gif);
-			// Serial.println(i);
-			#ifdef USE_HUB75
-				display->flipDMABuffer();
-			#endif
-			next_frame = t + i;
+
+	if (imgs_data->size) {
+		// Serial.println(imgs_data->size);
+		t_img* img = &imgs_data->queue[imgs_data->cursor];
+		// for (int i = 0; i < imgs_data->size; i++) {
+		// 	Serial.printf("[%d] %d\n", i, imgs_data->queue[(imgs_data->cursor + i) % EMOTE_BUFFER_SIZE].mode);
+		// 	Serial.println();
+		// }
+		if (img->mode == WAIT) {
+			Serial.printf("Load new image\n");
+			if (img->type == 'G') {
+				imgs_data->gif.open(img->data, img->len, GIFDraw);
+				img->off_x = ((int)MATRIX_W - imgs_data->gif.getCanvasWidth()  * SCALE) / 2 + OFF_X;
+				img->off_y = ((int)MATRIX_H - imgs_data->gif.getCanvasHeight() * SCALE) / 2 + OFF_Y;
+				#ifdef USE_LCD
+					tft.fillScreen(TFT_BLACK);
+				#endif
+			}
+			else {
+				imgs_data->png.openRAM(img->data, img->len, PNGDraw);
+				img->off_x = ((int)MATRIX_W - imgs_data->png.getWidth()  * SCALE) / 2 + OFF_X;
+				img->off_y = ((int)MATRIX_H - imgs_data->png.getHeight() * SCALE) / 2 + OFF_Y;
+				#ifdef USE_HUB75
+					display->clearScreen();
+				#endif
+				#ifdef USE_LCD
+					tft.fillScreen(TFT_BLACK);
+				#endif
+				imgs_data->png.decode(img, 0);
+				#ifdef USE_HUB75
+					flip_matrix();
+				#endif
+			}
+			img->mode = PLAY;
+			img->end_time = millis() + MIN_TIME;
+		} else {
+			if (img->type == 'G') {
+				if (millis() > next_frame) {
+					#ifdef USE_HUB75
+						display->clearScreen();
+					#endif
+					int t = millis();
+					int i;
+					imgs_data->gif.playFrame(false, &i, img);
+					next_frame = t + i;
+					#ifdef USE_HUB75
+						flip_matrix();
+					#endif
+				}
+			}
+			if (imgs_data->size > 1 && img->end_time < millis()) {
+				Serial.printf("NEXT\n");
+				free(img->data);
+				imgs_data->cursor++;
+				imgs_data->cursor %= EMOTE_BUFFER_SIZE;
+				imgs_data->size--;
+			}
 		}
-	#endif
+	}
 
 	client.loop();
 	wifiManager.process();
