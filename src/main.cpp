@@ -17,6 +17,14 @@
 	#define OFF_Y 0
 #endif
 
+#define IRC_SERVER "irc.chat.twitch.tv"
+#define IRC_PORT   6667
+
+#define CDN_URL_GIF "https://static-cdn.jtvnw.net/emoticons/v2/%s/default/dark/%s"
+#define CDN_URL_PNG "https://static-cdn.jtvnw.net/emoticons/v2/%s/static/dark/%s"
+
+#define CDN_URL_DEFAULT CDN_URL_GIF
+
 
 Preferences preferences;
 
@@ -44,44 +52,42 @@ Preferences preferences;
 	MatrixPanel_I2S_DMA *display = nullptr;
 #endif
 
-const char* root_ca= \
-"-----BEGIN CERTIFICATE-----\n" \
-"MIIDQTCCAimgAwIBAgITBmyfz5m/jAo54vB4ikPmljZbyjANBgkqhkiG9w0BAQsF\n" \
-"ADA5MQswCQYDVQQGEwJVUzEPMA0GA1UEChMGQW1hem9uMRkwFwYDVQQDExBBbWF6\n" \
-"b24gUm9vdCBDQSAxMB4XDTE1MDUyNjAwMDAwMFoXDTM4MDExNzAwMDAwMFowOTEL\n" \
-"MAkGA1UEBhMCVVMxDzANBgNVBAoTBkFtYXpvbjEZMBcGA1UEAxMQQW1hem9uIFJv\n" \
-"b3QgQ0EgMTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALJ4gHHKeNXj\n" \
-"ca9HgFB0fW7Y14h29Jlo91ghYPl0hAEvrAIthtOgQ3pOsqTQNroBvo3bSMgHFzZM\n" \
-"9O6II8c+6zf1tRn4SWiw3te5djgdYZ6k/oI2peVKVuRF4fn9tBb6dNqcmzU5L/qw\n" \
-"IFAGbHrQgLKm+a/sRxmPUDgH3KKHOVj4utWp+UhnMJbulHheb4mjUcAwhmahRWa6\n" \
-"VOujw5H5SNz/0egwLX0tdHA114gk957EWW67c4cX8jJGKLhD+rcdqsq08p8kDi1L\n" \
-"93FcXmn/6pUCyziKrlA4b9v7LWIbxcceVOF34GfID5yHI9Y/QCB/IIDEgEw+OyQm\n" \
-"jgSubJrIqg0CAwEAAaNCMEAwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMC\n" \
-"AYYwHQYDVR0OBBYEFIQYzIU07LwMlJQuCFmcx7IQTgoIMA0GCSqGSIb3DQEBCwUA\n" \
-"A4IBAQCY8jdaQZChGsV2USggNiMOruYou6r4lK5IpDB/G/wkjUu0yKGX9rbxenDI\n" \
-"U5PMCCjjmCXPI6T53iHTfIUJrU6adTrCC2qJeHZERxhlbI1Bjjt/msv0tadQ1wUs\n" \
-"N+gDS63pYaACbvXy8MWy7Vu33PqUXHeeE6V/Uq2V8viTO96LXFvKWlJbYK8U90vv\n" \
-"o/ufQJVtMVT8QtPHRh8jrdkPSHCa2XV4cdFyQzR1bldZwgJcJmApzyMZFo6IQ6XU\n" \
-"5MsI+yMRQ+hDKXJioaldXgjUkK642M4UwtBV8ob2xJNDd2ZhwLnoQdeXeGADbkpy\n" \
-"rqXRfboQnoZsG4q5WTP468SQvvG5\n" \
-"-----END CERTIFICATE-----\n";
-
 typedef struct s_param {
 	String key;
 	String val;
 } t_param;
 
-#define IRC_SERVER "irc.chat.twitch.tv"
-#define IRC_PORT   6667
 
-#define CDN_URL_GIF "https://static-cdn.jtvnw.net/emoticons/v2/%s/default/dark/%s"
-#define CDN_URL_PNG "https://static-cdn.jtvnw.net/emoticons/v2/%s/static/dark/%s"
+typedef struct {
+	uint8_t type;
+	uint8_t mode;
+	uint8_t* data;
+	size_t len;
+	int off_x;
+	int off_y;
+	uint32_t end_time;
+	union {
+		AnimatedGIF* gif;
+		PNG* png;
+	};
+} t_img;
 
-#define CDN_URL_DEFAULT CDN_URL_GIF
 
-enum img_mode { DOWNLOAD = 1, PLAY, WAIT};
+typedef struct {
+	PNG png;
+	AnimatedGIF gif;
+	// std::queue<t_img> queue;
+	t_img queue[EMOTE_BUFFER_SIZE];
+	uint cursor = 0;
+	size_t size = 0;
+} t_img_data;
 
 
+enum img_mode { DOWNLOAD = 1, PLAY, WAIT, DELETE};
+
+WiFiManagerParameter param_channel_name("ChannelName", "Channel Name",     "?", 50);
+WiFiManagerParameter param_bot_name(    "BotName",     "Bot Name",         "?", 50);
+WiFiManagerParameter param_token(       "Token",       "Token: (oauth:...)", "?", 50);
 
 String twitchChannelName;
 String twitchBotName;
@@ -93,38 +99,14 @@ IRCClient client(IRC_SERVER, IRC_PORT, wiFiClient);
 HTTPClient http;
 WiFiManager	wifiManager;
 
-uint8_t use_irc = 1;
-
-WiFiManagerParameter param_channel_name("ChannelName", "Channel Name",     "?", 50);
-WiFiManagerParameter param_bot_name(    "BotName",     "Bot Name",         "?", 50);
-WiFiManagerParameter param_token(       "Token",       "Token: (oauth:...)", "?", 50);
-
 uint8_t *gif_ptr;
-uint32_t gif_buf_pos = 0;
-
-typedef struct {
-	uint8_t type;
-	uint8_t mode;
-	uint8_t *data;
-	size_t len;
-	int off_x;
-	int off_y;
-	uint32_t end_time;
-} t_img;
-
-
-typedef struct {
-	PNG png;
-	AnimatedGIF gif;
-	// std::queue<t_img> queue;
-	t_img queue[EMOTE_BUFFER_SIZE];
-	uint cursor=0;
-	size_t size=0;
-} t_img_data;
-
+uint8_t use_irc = 1;
 
 t_img_data *imgs_data;
 t_img http_img;
+
+extern const char root_ca_start[] asm("_binary_src_aws_root_ca_pem_start");
+extern const char root_ca_end[]   asm("_binary_src_aws_root_ca_pem_end");
 
 void PNGDraw(PNGDRAW* pDraw) {
 	uint16_t usPixels[320];
@@ -211,7 +193,7 @@ int download_http(const char *url, const char* emote) {
 	sprintf(buff, url, emote, STRINGIZE_VALUE_OF(EMOTE_SIZE));
 	Serial.printf("url = '%s'\n", buff);
 	
-	http.begin(buff, root_ca);
+	http.begin(buff, root_ca_start);
 	return http.GET();
 }
 
@@ -471,8 +453,7 @@ void setup() {
 	}
 	else
 		ESP.restart();
-	Serial.print("IP: \n");
-	Serial.println(WiFi.localIP());
+	Serial.print("IP: "); Serial.println(WiFi.localIP());
 
 	start_irc();
 
@@ -510,8 +491,6 @@ void setup() {
 		// display->flipDMABuffer();
 	#endif
 
-	Serial.println("...Starting Display");
-
 	#ifdef BOARD_HAS_PSRAM
 		imgs_data = (t_img_data*)ps_malloc(sizeof(t_img_data));
 	#else
@@ -519,7 +498,6 @@ void setup() {
 	#endif
 	imgs_data->size = 0;
 	imgs_data->cursor = 0;
-	imgs_data->gif.begin(LITTLE_ENDIAN_PIXELS);
 }
 
 unsigned long next_frame = 0;
@@ -542,31 +520,36 @@ void loop() {
 	if (imgs_data->size) {
 		// Serial.println(imgs_data->size);
 		t_img* img = &imgs_data->queue[imgs_data->cursor];
-		// for (int i = 0; i < imgs_data->size; i++) {
-		// 	Serial.printf("[%d] %d\n", i, imgs_data->queue[(imgs_data->cursor + i) % EMOTE_BUFFER_SIZE].mode);
-		// 	Serial.println();
-		// }
+
+		Serial.println("\n\nbuffer:");
+		for (int i = 0; i < imgs_data->size; i++) {
+			t_img* img_ptr = &imgs_data->queue[(imgs_data->cursor + i) % EMOTE_BUFFER_SIZE];
+			Serial.printf("    [%d]\tmode:%d,\ttype:%d,\tlen:%d,\tend_time:%d\n", i, img_ptr->mode, img_ptr->type, img_ptr->len, img_ptr->end_time);
+		}
+
 		if (img->mode == WAIT) {
 			Serial.printf("Load new image\n");
 			if (img->type == 'G') {
-				imgs_data->gif.open(img->data, img->len, GIFDraw);
-				img->off_x = ((int)MATRIX_W - imgs_data->gif.getCanvasWidth()  * SCALE) / 2 + OFF_X;
-				img->off_y = ((int)MATRIX_H - imgs_data->gif.getCanvasHeight() * SCALE) / 2 + OFF_Y;
+				img->gif = new AnimatedGIF();
+				img->gif->begin(LITTLE_ENDIAN_PIXELS);
+				img->gif->open(img->data, img->len, GIFDraw);
+				img->off_x = ((int)MATRIX_W - img->gif->getCanvasWidth()  * SCALE) / 2 + OFF_X;
+				img->off_y = ((int)MATRIX_H - img->gif->getCanvasHeight() * SCALE) / 2 + OFF_Y;
 				#ifdef USE_LCD
 					tft.fillScreen(TFT_BLACK);
 				#endif
-			}
-			else {
-				imgs_data->png.openRAM(img->data, img->len, PNGDraw);
-				img->off_x = ((int)MATRIX_W - imgs_data->png.getWidth()  * SCALE) / 2 + OFF_X;
-				img->off_y = ((int)MATRIX_H - imgs_data->png.getHeight() * SCALE) / 2 + OFF_Y;
+			} else {
+				img->png = new PNG();
+				img->png->openRAM(img->data, img->len, PNGDraw);
+				img->off_x = ((int)MATRIX_W - img->png->getWidth()  * SCALE) / 2 + OFF_X;
+				img->off_y = ((int)MATRIX_H - img->png->getHeight() * SCALE) / 2 + OFF_Y;
 				#ifdef USE_HUB75
 					display->clearScreen();
 				#endif
 				#ifdef USE_LCD
 					tft.fillScreen(TFT_BLACK);
 				#endif
-				imgs_data->png.decode(img, 0);
+				img->png->decode(img, 0);
 				#ifdef USE_HUB75
 					flip_matrix();
 				#endif
@@ -581,7 +564,7 @@ void loop() {
 					#endif
 					int t = millis();
 					int i;
-					imgs_data->gif.playFrame(false, &i, img);
+					img->gif->playFrame(false, &i, img);
 					next_frame = t + i;
 					#ifdef USE_HUB75
 						flip_matrix();
@@ -589,8 +572,14 @@ void loop() {
 				}
 			}
 			if (imgs_data->size > 1 && img->end_time < millis()) {
+				// img->mode = DELETE;
 				Serial.printf("NEXT\n");
 				free(img->data);
+				if (img->type == 'G')
+					delete img->gif;
+				else
+					delete img->png;
+
 				imgs_data->cursor++;
 				imgs_data->cursor %= EMOTE_BUFFER_SIZE;
 				imgs_data->size--;
