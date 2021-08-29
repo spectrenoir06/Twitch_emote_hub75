@@ -284,9 +284,9 @@ void download_BTTV(String user_id) {
 
 	Serial.printf("Downloading emotes list from BTTV for %s ...\n", user_id.c_str());
 
-	// download_BTTV_data("https://api.betterttv.net/3/cached/emotes/global", &doc);
-	// arr = doc.as<JsonArray>();
-	// download_BTTV_push(arr);
+	download_BTTV_data("https://api.betterttv.net/3/cached/emotes/global", &doc);
+	arr = doc.as<JsonArray>();
+	download_BTTV_push(arr);
 
 	download_BTTV_data("https://api.betterttv.net/3/cached/users/twitch/" + user_id, &doc);
 	arr = doc["channelEmotes"].as<JsonArray>();
