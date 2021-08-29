@@ -1,10 +1,25 @@
 #include <Arduino.h>
 #include <WiFiManager.h>
 #include <IRCClient.h>
+
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
+
 #include <Preferences.h>
 #include <AnimatedGIF.h>
 #include <PNGdec.h>
+#include <JPEGDEC.h>
+
+#include <ArduinoJson.h>
+
+// iterators in vector
+#include <iostream>
+#include <vector>
+#include <Regexp.h>
+
+
+using namespace std;
+
 
 #define STRINGIZE(x) #x
 #define STRINGIZE_VALUE_OF(x) STRINGIZE(x)
@@ -20,10 +35,12 @@
 #define IRC_SERVER "irc.chat.twitch.tv"
 #define IRC_PORT   6667
 
-#define CDN_URL_GIF "https://static-cdn.jtvnw.net/emoticons/v2/%s/default/dark/%s"
-#define CDN_URL_PNG "https://static-cdn.jtvnw.net/emoticons/v2/%s/static/dark/%s"
+#define CDN_URL_TWITCH_GIF "https://static-cdn.jtvnw.net/emoticons/v2/%s/default/dark/%d.0"
+#define CDN_URL_TWITCH_PNG "https://static-cdn.jtvnw.net/emoticons/v2/%s/static/dark/%d.0"
 
-#define CDN_URL_DEFAULT CDN_URL_GIF
+#define CDN_URL_BTTV "https://cdn.betterttv.net/emote/%s/%dx"
+
+#define CDN_URL_TWITCH_DEFAULT CDN_URL_TWITCH_GIF
 
 
 Preferences preferences;
@@ -69,19 +86,21 @@ typedef struct {
 	union {
 		AnimatedGIF* gif;
 		PNG* png;
+		JPEGDEC *jpeg;
 	};
 } t_img;
 
 
 typedef struct {
-	PNG png;
-	AnimatedGIF gif;
-	// std::queue<t_img> queue;
 	t_img queue[EMOTE_BUFFER_SIZE];
 	uint cursor = 0;
 	size_t size = 0;
 } t_img_data;
 
+typedef struct {
+	String id;
+	String code;
+} t_bttv_emotes;
 
 enum img_mode { DOWNLOAD = 1, PLAY, WAIT, DELETE};
 
@@ -96,7 +115,7 @@ String ircChannel = "";
 
 WiFiClient wiFiClient;
 IRCClient client(IRC_SERVER, IRC_PORT, wiFiClient);
-HTTPClient http;
+// HTTPClient http;
 WiFiManager	wifiManager;
 
 uint8_t *gif_ptr;
@@ -105,8 +124,17 @@ uint8_t use_irc = 1;
 t_img_data *imgs_data;
 t_img http_img;
 
-extern const char root_ca_start[] asm("_binary_src_aws_root_ca_pem_start");
-extern const char root_ca_end[]   asm("_binary_src_aws_root_ca_pem_end");
+uint emotes_bttv_size = 0;
+std::vector<t_bttv_emotes> bttv_emotes;
+
+extern const char twitch_pem_start[] asm("_binary_src_cert_twitch_pem_start");
+extern const char twitch_pem_end[]   asm("_binary_src_cert_twitch_pem_end");
+
+extern const char bttv_pem_start[] asm("_binary_src_cert_bttv_pem_start");
+extern const char bttv_pem_end[]   asm("_binary_src_cert_bttv_pem_end");
+
+WiFiClientSecure* https_client;
+HTTPClient https;
 
 void PNGDraw(PNGDRAW* pDraw) {
 	uint16_t usPixels[320];
@@ -114,7 +142,7 @@ void PNGDraw(PNGDRAW* pDraw) {
 	int y = pDraw->y;
 	t_img* img = (t_img*)pDraw->pUser;
 
-	imgs_data->png.getLineAsRGB565(pDraw, usPixels, PNG_RGB565_LITTLE_ENDIAN, 0x000000);
+	img->png->getLineAsRGB565(pDraw, usPixels, PNG_RGB565_LITTLE_ENDIAN, 0x000000);
 	for (int x = 0; x < pDraw->iWidth; x++) {
 		#if SCALE == 1
 			#ifdef USE_HUB75
@@ -133,6 +161,37 @@ void PNGDraw(PNGDRAW* pDraw) {
 			#endif
 		#endif
 	}
+}
+
+int JPEGDraw(JPEGDRAW* pDraw) {
+
+	// tft.writeRect(pDraw->x, pDraw->y, pDraw->iWidth, pDraw->iHeight, pDraw->pPixels);
+	int off_x = pDraw->x;
+	int off_y = pDraw->y;
+	int w = pDraw->iWidth;
+	uint16_t* pixels = (uint16_t*)pDraw->pPixels;
+	Serial.printf("JPEGDraw\n");
+	for (int x = 0; x < w; x++) {
+		for (int y = 0; y < pDraw->iHeight; y++) {
+			#if SCALE == 1
+				#ifdef USE_HUB75
+					display->drawPixel(off_x + x, off_y + y, pixels[x + y * w]);
+				#endif
+				#ifdef USE_LCD
+					tft.drawPixel(off_x + x, off_y + y, pixels[x + y * w]);
+					// drawPixel(off_x + x, off_y + y, pixels[x + y * w]);
+				#endif
+			#else
+				#ifdef USE_HUB75
+					display->fillRect((off_x + (x * SCALE), (off_y + (y * SCALE), w * SCALE, h * SCALE, usPixels[x]);
+				#endif
+				#ifdef USE_LCD
+					tft.fillRect(off_x + (x * SCALE), off_y + (y * SCALE), SCALE, SCALE, pixels[x + y * w]);
+				#endif
+			#endif
+		}	
+	}
+	return 1;
 }
 
 // Draw a line of image directly on the LCD
@@ -188,13 +247,72 @@ String get_param(String key, t_param *param, size_t size) {
 	return String();
 }
 
-int download_http(const char *url, const char* emote) {
+int download_BTTV_data(String url, DynamicJsonDocument *doc) {
+	https_client->setCACert(bttv_pem_start);
+	https.begin(*https_client, url);
+	int code = https.GET();
+	if (code == 200) {
+		doc->clear();
+		DeserializationError error = deserializeJson(*doc, https.getString());
+		if (error) {
+			Serial.print(F("deserializeJson() failed: "));
+			Serial.println(error.f_str());
+			return 0;
+		}
+		return 1;
+	} else {
+		Serial.print(F("HTTPS GET failed: code="));
+		Serial.print(code);
+		Serial.print(F("   url = "));
+		Serial.println(url);
+		return 0;
+	}
+}
+
+void download_BTTV_push(JsonArray& arr) {
+	for (JsonVariant value : arr) {
+		t_bttv_emotes tmp;
+		tmp.id = value["id"].as<String>();
+		tmp.code = value["code"].as<String>();
+		bttv_emotes.push_back(tmp);
+	}
+}
+
+void download_BTTV(String user_id) {
+	DynamicJsonDocument doc(10000);
+	JsonArray arr;
+
+	Serial.printf("Downloading emotes list from BTTV for %s ...\n", user_id.c_str());
+
+	// download_BTTV_data("https://api.betterttv.net/3/cached/emotes/global", &doc);
+	// arr = doc.as<JsonArray>();
+	// download_BTTV_push(arr);
+
+	download_BTTV_data("https://api.betterttv.net/3/cached/users/twitch/" + user_id, &doc);
+	arr = doc["channelEmotes"].as<JsonArray>();
+	download_BTTV_push(arr);
+	arr = doc["sharedEmotes"].as<JsonArray>();
+	download_BTTV_push(arr);
+
+	// for (std::vector<t_bttv_emotes>::iterator it = bttv_emotes.begin(); it != bttv_emotes.end(); ++it) {
+	// 	Serial.print("code: ");
+	// 	Serial.print(it->code);
+	// 	Serial.print(" : ");
+	// 	Serial.println(it->id);
+	// }
+
+	Serial.printf("Load %d emotes from BTTV\n", bttv_emotes.size());
+}
+
+int download_http(const char *url, const char* emote, int size, const char *pem) {
 	char buff[200];
-	sprintf(buff, url, emote, STRINGIZE_VALUE_OF(EMOTE_SIZE));
-	Serial.printf("url = '%s'\n", buff);
+	sprintf(buff, url, emote, size);
+	Serial.printf("url = '%s'\n\n", buff);
 	
-	http.begin(buff, root_ca_start);
-	return http.GET();
+	// http.begin(buff, pem);
+	https_client->setCACert(pem);
+	https.begin(*https_client, buff);
+	return https.GET();
 }
 
 void download_http_data(uint8_t c, size_t len, WiFiClient *stream, String str) {
@@ -216,14 +334,14 @@ void download_http_data(uint8_t c, size_t len, WiFiClient *stream, String str) {
 			}
 			else {
 				Serial.printf("Can't allocate space for GIF\n");
-				http.end();
-				int code = download_http(CDN_URL_PNG, str.c_str());
+				https.end();
+				int code = download_http(CDN_URL_TWITCH_PNG, str.c_str(), EMOTE_SIZE, twitch_pem_start);
 
 				if (code == 200 || code == 304) {
-					int len = http.getSize();
+					int len = https.getSize();
 					Serial.printf("len = '%d'\n", len);
 
-					WiFiClient *stream = http.getStreamPtr();
+					WiFiClient *stream = https.getStreamPtr();
 					download_http_data(stream->peek(), len, stream, str);
 				}
 			}
@@ -231,10 +349,60 @@ void download_http_data(uint8_t c, size_t len, WiFiClient *stream, String str) {
 	}
 }
 
+MatchState ms;
+
+String get_emote_bttv(String str) {
+	for (std::vector<t_bttv_emotes>::iterator it = bttv_emotes.begin(); it != bttv_emotes.end(); ++it) {
+		// ms.Target((char*)str.c_str());
+
+		// String reg = "%f[%a]" + str + "%f[%A]";
+		// char result = ms.Match(reg.c_str());
+		
+		int found = str.indexOf(it->code);
+		// Serial.printf("search for reg: %s in %s\n", reg.c_str(), str.c_str());
+		if (found>=0) {
+			Serial.printf("Found emote %d %s\n", found, it->code.c_str());
+			return it->id;
+		}
+	}
+	return String("");
+}
+
+void download_twitch_emote(String emotes) {
+	Serial.printf("emotes: %s\n", emotes.c_str());
+	String str = emotes.substring(0, emotes.indexOf(":")); // get the ID of the first emote
+	int code = download_http(CDN_URL_TWITCH_DEFAULT, str.c_str(), EMOTE_SIZE, twitch_pem_start);
+	if (code == 200 || code == 304) {
+		int len = https.getSize();
+		Serial.printf("len = '%d'\n", len);
+		WiFiClient* stream = https.getStreamPtr();
+		download_http_data(stream->peek(), len, stream, str);
+		https.end();
+		#ifdef USE_LED
+			digitalWrite(led, LOW);
+		#endif
+	}
+}
+
+void download_bttv_emote(String emotes) {
+	Serial.printf("emotes: %s\n", emotes.c_str());
+	int code = download_http(CDN_URL_BTTV, emotes.c_str(), EMOTE_SIZE, bttv_pem_start);
+	if (code == 200 || code == 304) {
+		int len = https.getSize();
+		Serial.printf("len = '%d'\n", len);
+		WiFiClient* stream = https.getStreamPtr();
+		download_http_data(stream->peek(), len, stream, emotes);
+		https.end();
+		#ifdef USE_LED
+			digitalWrite(led, LOW);
+		#endif
+	}
+}
+
 void irc_callback(IRCMessage ircMessage) {
 	// Serial.printf("cmd = %s\n", ircMessage.command.c_str());
 	if (ircMessage.command == "PRIVMSG" && ircMessage.text[0] != '\001') {
-		
+
 		Serial.printf("<%s> %s\n", ircMessage.nick.c_str(), ircMessage.text.c_str());
 
 		#ifdef USE_LED
@@ -245,23 +413,23 @@ void irc_callback(IRCMessage ircMessage) {
 		// Serial.printf("data: %s\n", ircMessage.twitch_data.c_str());
 
 		parseTwitchData(ircMessage.twitch_data, data);
-		String emotes = get_param("emotes", data, 20);
 
-		if (emotes != "") {
-			Serial.printf("emotes: %s\n", emotes.c_str());
-			String str = emotes.substring(0, emotes.indexOf(":")); // get the ID of the first emote
-			int code = download_http(CDN_URL_DEFAULT, str.c_str());
-			if (code == 200 || code == 304) {
-				int len = http.getSize();
-				Serial.printf("len = '%d'\n", len);
-				WiFiClient *stream = http.getStreamPtr();
-				download_http_data(stream->peek(), len, stream, str);
-				http.end();
-				#ifdef USE_LED
-					digitalWrite(led, LOW);
-				#endif
-			}
+		if (emotes_bttv_size == 0) {
+			download_BTTV(get_param("room-id", data, 20));
+			emotes_bttv_size = bttv_emotes.size();
 		}
+		String emotes_bttv_string = get_emote_bttv(ircMessage.text);
+
+		if (emotes_bttv_string != "") {
+			download_bttv_emote(emotes_bttv_string);
+		}
+		else {
+			String emotes = get_param("emotes", data, 20);
+			if (emotes != "")
+				download_twitch_emote(emotes);
+		}
+
+
 	}
 	else if (ircMessage.command == "NOTICE") {
 		Serial.println(ircMessage.text);
@@ -306,9 +474,21 @@ void File_Upload() {
 	wifiManager.server->send(200, "text/html", webpage);
 }
 
+uint8_t getType(String str) {
+	if (str == "image/gif")
+		return 'G';
+	else if (str == "image/png")
+		return 137;
+	else if (str == "image/jpeg")
+		return 0xFF;
+	else
+		return 0;
+}
+
 void handleFileUpload(){ // upload a new file to the Filing system
 	String webpage = "";
 	HTTPUpload& uploadfile = wifiManager.server->upload();
+	uint8_t type = getType(uploadfile.type);
 	if(uploadfile.status == UPLOAD_FILE_START) {
 		Serial.print("Upload File Name: "); Serial.println(uploadfile.filename);
 		Serial.print("type: "); Serial.println(uploadfile.type);
@@ -317,15 +497,16 @@ void handleFileUpload(){ // upload a new file to the Filing system
 			digitalWrite(led, HIGH);
 		#endif
 
-		if (uploadfile.type == "image/gif" || uploadfile.type == "image/png") {
+		if (type) {
 			if (imgs_data->size < EMOTE_BUFFER_SIZE) {
+				// Serial.printf("start write\n");
 				#ifdef BOARD_HAS_PSRAM
 					http_img.data = (uint8_t*)ps_malloc(1);
 				#else
 					http_img.data = (uint8_t*)malloc(1);
 				#endif
 				http_img.len = 0;
-				http_img.type = (uploadfile.type == "image/gif") ? 'G' : 127;
+				http_img.type = type;
 				http_img.mode = DOWNLOAD;
 			}
 		}
@@ -340,7 +521,7 @@ void handleFileUpload(){ // upload a new file to the Filing system
 		}
 	} else if (uploadfile.status == UPLOAD_FILE_WRITE) {
 		// Serial.print("Write: "); Serial.println(uploadfile.currentSize);
-		if (uploadfile.type == "image/gif" || uploadfile.type == "image/png") {
+		if (type) {
 			#ifdef BOARD_HAS_PSRAM
 				uint8_t* ptr_tmp = (uint8_t*)ps_realloc(http_img.data, http_img.len + uploadfile.currentSize);
 			#else
@@ -368,7 +549,7 @@ void handleFileUpload(){ // upload a new file to the Filing system
 	}
 	else if (uploadfile.status == UPLOAD_FILE_END) {
 		// Serial.print("END: "); Serial.println(http_img.len);
-		if (uploadfile.type == "image/gif" || uploadfile.type == "image/png") {
+		if (type) {
 			if (imgs_data->size < EMOTE_BUFFER_SIZE) {
 				Serial.printf("insert: cursor = %d, size = %d, pos =%d\n", imgs_data->cursor, imgs_data->size, (imgs_data->cursor + imgs_data->size) % EMOTE_BUFFER_SIZE);
 				t_img* img = &imgs_data->queue[(imgs_data->cursor + imgs_data->size) % EMOTE_BUFFER_SIZE];
@@ -418,7 +599,7 @@ void setup() {
 	#endif
 
 	Serial.printf("Start Wifi manager\n");
-	wifiManager.setDebugOutput(false);
+	wifiManager.setDebugOutput(true);
 	wifiManager.setTimeout(180);
 	wifiManager.setConfigPortalTimeout(180); // try for 3 minute
 	wifiManager.setMinimumSignalQuality(15);
@@ -498,6 +679,9 @@ void setup() {
 	#endif
 	imgs_data->size = 0;
 	imgs_data->cursor = 0;
+
+	// http.setReuse(true);
+	https_client = new WiFiClientSecure;
 }
 
 unsigned long next_frame = 0;
@@ -521,15 +705,16 @@ void loop() {
 		// Serial.println(imgs_data->size);
 		t_img* img = &imgs_data->queue[imgs_data->cursor];
 
-		Serial.println("\n\nbuffer:");
-		for (int i = 0; i < imgs_data->size; i++) {
-			t_img* img_ptr = &imgs_data->queue[(imgs_data->cursor + i) % EMOTE_BUFFER_SIZE];
-			Serial.printf("    [%d]\tmode:%d,\ttype:%d,\tlen:%d,\tend_time:%d\n", i, img_ptr->mode, img_ptr->type, img_ptr->len, img_ptr->end_time);
-		}
+		// Serial.println("\n\nbuffer:");
+		// for (int i = 0; i < imgs_data->size; i++) {
+		// 	t_img* img_ptr = &imgs_data->queue[(imgs_data->cursor + i) % EMOTE_BUFFER_SIZE];
+		// 	Serial.printf("    [%d]\tmode:%d,\ttype:%d,\tlen:%d,\tend_time:%d\n", i, img_ptr->mode, img_ptr->type, img_ptr->len, img_ptr->end_time);
+		// }
 
+		uint8_t type = img->type;
 		if (img->mode == WAIT) {
-			Serial.printf("Load new image\n");
-			if (img->type == 'G') {
+			Serial.printf("Load new image %d\n", type);
+			if (type == 'G') { // GIF
 				img->gif = new AnimatedGIF();
 				img->gif->begin(LITTLE_ENDIAN_PIXELS);
 				img->gif->open(img->data, img->len, GIFDraw);
@@ -538,7 +723,7 @@ void loop() {
 				#ifdef USE_LCD
 					tft.fillScreen(TFT_BLACK);
 				#endif
-			} else {
+			} else if (type == 137) { // PNG
 				img->png = new PNG();
 				img->png->openRAM(img->data, img->len, PNGDraw);
 				img->off_x = ((int)MATRIX_W - img->png->getWidth()  * SCALE) / 2 + OFF_X;
@@ -553,11 +738,37 @@ void loop() {
 				#ifdef USE_HUB75
 					flip_matrix();
 				#endif
+			} else if (type == 0xFF) { // JPEG
+				img->jpeg = new JPEGDEC();
+				Serial.printf("load JPEG, %d\n", img->len);
+				if (!img->jpeg->openRAM(img->data, img->len, JPEGDraw)) {
+					Serial.printf("JPEG ERROR %d\n", img->jpeg->getLastError());
+					free(img->data);
+					// img->png->close();
+					delete img->png;
+					imgs_data->cursor++;
+					imgs_data->cursor %= EMOTE_BUFFER_SIZE;
+					imgs_data->size--;
+				} else {
+					// img->jpeg->setPixelType(RGB565_LITTLE_ENDIAN);
+					img->off_x = ((int)MATRIX_W - img->jpeg->getWidth()  * SCALE) / 2 + OFF_X;
+					img->off_y = ((int)MATRIX_H - img->jpeg->getHeight() * SCALE) / 2 + OFF_Y;
+					#ifdef USE_HUB75
+						display->clearScreen();
+					#endif
+					#ifdef USE_LCD
+						tft.fillScreen(TFT_BLACK);
+					#endif
+					Serial.println(img->jpeg->decode(img->off_x, img->off_y, 0));
+					#ifdef USE_HUB75
+						flip_matrix();
+					#endif
+				}
 			}
 			img->mode = PLAY;
 			img->end_time = millis() + MIN_TIME;
 		} else {
-			if (img->type == 'G') {
+			if (type == 'G') {
 				if (millis() > next_frame) {
 					#ifdef USE_HUB75
 						display->clearScreen();
@@ -575,10 +786,18 @@ void loop() {
 				// img->mode = DELETE;
 				Serial.printf("NEXT\n");
 				free(img->data);
-				if (img->type == 'G')
+				if (type == 'G') { // GIF
+					img->gif->close();
 					delete img->gif;
-				else
+				}
+				else if (type == 137) { // PNG
+					img->png->close();
 					delete img->png;
+				}
+				else if (type == 0XFF) { // JPEG
+					img->jpeg->close();
+					delete img->jpeg;
+				}
 
 				imgs_data->cursor++;
 				imgs_data->cursor %= EMOTE_BUFFER_SIZE;
