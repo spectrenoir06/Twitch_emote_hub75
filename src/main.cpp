@@ -307,9 +307,7 @@ void download_BTTV(String user_id) {
 int download_http(const char *url, const char* emote, int size, const char *pem) {
 	char buff[200];
 	sprintf(buff, url, emote, size);
-	Serial.printf("url = '%s'\n\n", buff);
-	
-	// http.begin(buff, pem);
+	Serial.printf("url = '%s'\n", buff);
 	https_client->setCACert(pem);
 	https.begin(*https_client, buff);
 	return https.GET();
@@ -583,8 +581,8 @@ void handleFileUpload(){ // upload a new file to the Filing system
 	}
 #endif
 
-void task_test(void* parameter) {
-	Serial.print("task_test is running on: ");
+void task_irc(void* parameter) {
+	Serial.print("task_irc is running on: ");
 	Serial.println(xPortGetCoreID());
 	start_irc();
 	for (;;) {
@@ -718,15 +716,16 @@ void setup() {
 	https_client = new WiFiClientSecure;
 
 	xTaskCreatePinnedToCore(
-		task_test,    // Function that should be called
-		"irc",   // Name of the task (for debugging)
+		task_irc,    // Function that should be called
+		"task_irc",   // Name of the task (for debugging)
 		30000,            // Stack size (bytes)
 		NULL,            // Parameter to pass
 		1,               // Task priority
 		NULL,             // Task handle
 		0
 	);
-	Serial.println("Task start ?");
+	Serial.print("Setup task running on: ");
+	Serial.println(xPortGetCoreID());
 }
 
 unsigned long next_frame = 0;
