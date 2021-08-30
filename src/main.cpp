@@ -138,7 +138,7 @@ void PNGDraw(PNGDRAW* pDraw) {
 	int y = pDraw->y;
 	t_img* img = (t_img*)pDraw->pUser;
 
-	img->png->getLineAsRGB565(pDraw, usPixels, PNG_RGB565_LITTLE_ENDIAN, -1);
+	img->png->getLineAsRGB565(pDraw, usPixels, PNG_RGB565_LITTLE_ENDIAN, 0x0000);
 	for (int x = 0; x < pDraw->iWidth; x++) {
 		#if SCALE == 1
 			#ifdef USE_HUB75
