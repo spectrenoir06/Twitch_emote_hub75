@@ -6,6 +6,7 @@
 #include <WiFiClientSecure.h>
 
 #include <Preferences.h>
+
 #include <AnimatedGIF.h>
 #include <PNGdec.h>
 #include <JPEGDEC.h>
@@ -416,7 +417,7 @@ void irc_callback(IRCMessage ircMessage) {
 		// Serial.printf("data: %s\n", ircMessage.twitch_data.c_str());
 
 		parseTwitchData(ircMessage.twitch_data, data);
-		
+
 		#ifdef USE_BTTV
 			if (emotes_bttv_size == 0) { // download emote list using room-id
 				download_BTTV(get_param("room-id", data, 20));
@@ -433,9 +434,8 @@ void irc_callback(IRCMessage ircMessage) {
 		}
 		#ifdef USE_BTTV
 		else {
-			if (emotes_bttv_string != "") {
+			if (emotes_bttv_string != "")
 				download_bttv_emote(emotes_bttv_string);
-			}
 		}
 		#endif
 	}
@@ -583,6 +583,34 @@ void handleFileUpload(){ // upload a new file to the Filing system
 	}
 #endif
 
+void task_test(void* parameter) {
+	Serial.print("task_test is running on: ");
+	Serial.println(xPortGetCoreID());
+	start_irc();
+	for (;;) {
+		if (!client.connected() && use_irc) {
+			Serial.println("Attempting to connect to " + ircChannel);
+			if (client.connect(twitchBotName, "", twitchToken)) {
+				client.sendRaw("JOIN " + ircChannel);
+				client.sendRaw("CAP REQ :twitch.tv/tags twitch.tv/commands");
+				Serial.println("Connected to twitch IRC");
+				Serial.println("Wait for auth...");
+			}
+			else {
+				Serial.println("Failed... try again in 5 seconds");
+				vTaskDelay(5000000 / portTICK_PERIOD_MS);
+			}
+			// return;
+		}
+		client.loop();
+		wifiManager.process();
+		#if USE_M5
+			M5.update();
+		#endif
+		vTaskDelay(1 / portTICK_PERIOD_MS);
+	}
+}
+
 
 void setup() {
 	#ifdef USE_M5
@@ -644,8 +672,6 @@ void setup() {
 		ESP.restart();
 	Serial.print("IP: "); Serial.println(WiFi.localIP());
 
-	start_irc();
-
 	#ifdef USE_LCD
 		#ifndef USE_M5
 			tft.begin();
@@ -690,25 +716,22 @@ void setup() {
 
 	// http.setReuse(true);
 	https_client = new WiFiClientSecure;
+
+	xTaskCreatePinnedToCore(
+		task_test,    // Function that should be called
+		"irc",   // Name of the task (for debugging)
+		30000,            // Stack size (bytes)
+		NULL,            // Parameter to pass
+		1,               // Task priority
+		NULL,             // Task handle
+		0
+	);
+	Serial.println("Task start ?");
 }
 
 unsigned long next_frame = 0;
 
 void loop() {
-	if (!client.connected() && use_irc) {
-		Serial.println("Attempting to connect to " + ircChannel);
-		if (client.connect(twitchBotName, "", twitchToken)) {
-			client.sendRaw("JOIN " + ircChannel);
-			client.sendRaw("CAP REQ :twitch.tv/tags twitch.tv/commands");
-			Serial.println("Connected to twitch IRC");
-			Serial.println("Wait for auth...");
-		} else {
-			Serial.println("Failed... try again in 5 seconds");
-			delay(5000);
-		}
-		return;
-	}
-
 	if (imgs_data->size) {
 		// Serial.println(imgs_data->size);
 		t_img* img = &imgs_data->queue[imgs_data->cursor];
@@ -813,12 +836,7 @@ void loop() {
 			}
 		}
 	}
-
-	client.loop();
-	wifiManager.process();
-	#if USE_M5
-		M5.update();
-	#endif
+	vTaskDelay(1 / portTICK_PERIOD_MS);
 }
 
 void sendTwitchMessage(String message) {
