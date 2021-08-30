@@ -10,19 +10,12 @@
 #include <PNGdec.h>
 #include <JPEGDEC.h>
 
-#include <ArduinoJson.h>
-
-// iterators in vector
-#include <iostream>
-#include <vector>
-#include <Regexp.h>
-
-
-using namespace std;
-
-
-#define STRINGIZE(x) #x
-#define STRINGIZE_VALUE_OF(x) STRINGIZE(x)
+#ifdef USE_BTTV
+	#include <ArduinoJson.h>
+	#include <vector>
+	// #include <Regexp.h>
+	using namespace std;
+#endif
 
 #ifndef OFF_X
 	#define OFF_X 0
@@ -124,8 +117,10 @@ uint8_t use_irc = 1;
 t_img_data *imgs_data;
 t_img http_img;
 
-uint emotes_bttv_size = 0;
-std::vector<t_bttv_emotes> bttv_emotes;
+#ifdef USE_BTTV
+	uint emotes_bttv_size = 0;
+	std::vector<t_bttv_emotes> bttv_emotes;
+#endif
 
 extern const char twitch_pem_start[] asm("_binary_src_cert_twitch_pem_start");
 extern const char twitch_pem_end[]   asm("_binary_src_cert_twitch_pem_end");
@@ -142,7 +137,7 @@ void PNGDraw(PNGDRAW* pDraw) {
 	int y = pDraw->y;
 	t_img* img = (t_img*)pDraw->pUser;
 
-	img->png->getLineAsRGB565(pDraw, usPixels, PNG_RGB565_LITTLE_ENDIAN, 0x000000);
+	img->png->getLineAsRGB565(pDraw, usPixels, PNG_RGB565_LITTLE_ENDIAN, -1);
 	for (int x = 0; x < pDraw->iWidth; x++) {
 		#if SCALE == 1
 			#ifdef USE_HUB75
@@ -247,6 +242,8 @@ String get_param(String key, t_param *param, size_t size) {
 	return String();
 }
 
+#ifdef USE_BTTV
+
 int download_BTTV_data(String url, DynamicJsonDocument *doc) {
 	https_client->setCACert(bttv_pem_start);
 	https.begin(*https_client, url);
@@ -304,6 +301,8 @@ void download_BTTV(String user_id) {
 	Serial.printf("Load %d emotes from BTTV\n", bttv_emotes.size());
 }
 
+#endif
+
 int download_http(const char *url, const char* emote, int size, const char *pem) {
 	char buff[200];
 	sprintf(buff, url, emote, size);
@@ -349,7 +348,8 @@ void download_http_data(uint8_t c, size_t len, WiFiClient *stream, String str) {
 	}
 }
 
-MatchState ms;
+#ifdef USE_BTTV
+// MatchState ms;
 
 String get_emote_bttv(String str) {
 	for (std::vector<t_bttv_emotes>::iterator it = bttv_emotes.begin(); it != bttv_emotes.end(); ++it) {
@@ -367,6 +367,7 @@ String get_emote_bttv(String str) {
 	}
 	return String("");
 }
+#endif
 
 void download_twitch_emote(String emotes) {
 	Serial.printf("emotes: %s\n", emotes.c_str());
@@ -384,6 +385,7 @@ void download_twitch_emote(String emotes) {
 	}
 }
 
+#ifdef USE_BTTV
 void download_bttv_emote(String emotes) {
 	Serial.printf("emotes: %s\n", emotes.c_str());
 	int code = download_http(CDN_URL_BTTV, emotes.c_str(), EMOTE_SIZE, bttv_pem_start);
@@ -398,6 +400,7 @@ void download_bttv_emote(String emotes) {
 		#endif
 	}
 }
+#endif
 
 void irc_callback(IRCMessage ircMessage) {
 	// Serial.printf("cmd = %s\n", ircMessage.command.c_str());
@@ -413,23 +416,28 @@ void irc_callback(IRCMessage ircMessage) {
 		// Serial.printf("data: %s\n", ircMessage.twitch_data.c_str());
 
 		parseTwitchData(ircMessage.twitch_data, data);
+		
+		#ifdef USE_BTTV
+			if (emotes_bttv_size == 0) { // download emote list using room-id
+				download_BTTV(get_param("room-id", data, 20));
+				emotes_bttv_size = bttv_emotes.size();
+			}
+			String emotes_bttv_string = get_emote_bttv(ircMessage.text);
+		#endif
 
-		if (emotes_bttv_size == 0) {
-			download_BTTV(get_param("room-id", data, 20));
-			emotes_bttv_size = bttv_emotes.size();
-		}
-		String emotes_bttv_string = get_emote_bttv(ircMessage.text);
+		String emotes = get_param("emotes", data, 20);
 
-		if (emotes_bttv_string != "") {
-			download_bttv_emote(emotes_bttv_string);
-		}
-		else {
-			String emotes = get_param("emotes", data, 20);
+		if (emotes != "") {
 			if (emotes != "")
 				download_twitch_emote(emotes);
 		}
-
-
+		#ifdef USE_BTTV
+		else {
+			if (emotes_bttv_string != "") {
+				download_bttv_emote(emotes_bttv_string);
+			}
+		}
+		#endif
 	}
 	else if (ircMessage.command == "NOTICE") {
 		Serial.println(ircMessage.text);
@@ -734,7 +742,7 @@ void loop() {
 				#ifdef USE_LCD
 					tft.fillScreen(TFT_BLACK);
 				#endif
-				img->png->decode(img, 0);
+					img->png->decode(img, PNG_FAST_PALETTE);
 				#ifdef USE_HUB75
 					flip_matrix();
 				#endif
