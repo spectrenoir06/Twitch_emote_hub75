@@ -76,6 +76,7 @@ typedef struct {
 	size_t len;
 	int off_x;
 	int off_y;
+	float scale;
 	uint32_t end_time;
 	union {
 		AnimatedGIF* gif;
@@ -134,61 +135,60 @@ HTTPClient https;
 
 void PNGDraw(PNGDRAW* pDraw) {
 	uint16_t usPixels[320];
-	uint8_t ucMask[40];
+	// uint8_t ucMask[40];
 	int y = pDraw->y;
 	t_img* img = (t_img*)pDraw->pUser;
 
 	img->png->getLineAsRGB565(pDraw, usPixels, PNG_RGB565_LITTLE_ENDIAN, 0x0000);
 	for (int x = 0; x < pDraw->iWidth; x++) {
-		#if SCALE == 1
-			#ifdef USE_HUB75
-				display->drawPixel(img->off_x + x, img->off_y + y, usPixels[x]);
-			#endif
-			#ifdef USE_LCD
-				tft.drawPixel(img->off_x + x, img->off_y + y, usPixels[x]);
-				// drawPixel(img->off_x + x, img->off_y + y, usPixels[x]);
-			#endif
-		#else
-			#ifdef USE_HUB75
-				display->fillRect((img->off_x + (x * SCALE), (img->off_y + (y * SCALE), w * SCALE, h * SCALE, usPixels[x]);
-			#endif
-			#ifdef USE_LCD
-				tft.fillRect(img->off_x+(x*SCALE), img->off_y+(y*SCALE), SCALE, SCALE, usPixels[x]);
-			#endif
+		#ifdef USE_HUB75
+			display->fillRect(
+				img->off_x + ceil(x * img->scale),
+				img->off_y + ceil(y * img->scale),
+				ceil(img->scale),
+				ceil(img->scale),
+				usPixels[x]
+			);
+		#endif
+		#ifdef USE_LCD
+			tft.fillRect(
+				img->off_x + ceil(x * img->scale),
+				img->off_y + ceil(y * img->scale),
+				ceil(img->scale),
+				ceil(img->scale),
+				usPixels[x]
+			);
 		#endif
 	}
 }
 
-int JPEGDraw(JPEGDRAW* pDraw) {
+// int JPEGDraw(JPEGDRAW* pDraw) {
 
-	// tft.writeRect(pDraw->x, pDraw->y, pDraw->iWidth, pDraw->iHeight, pDraw->pPixels);
-	int off_x = pDraw->x;
-	int off_y = pDraw->y;
-	int w = pDraw->iWidth;
-	uint16_t* pixels = (uint16_t*)pDraw->pPixels;
-	Serial.printf("JPEGDraw\n");
-	for (int x = 0; x < w; x++) {
-		for (int y = 0; y < pDraw->iHeight; y++) {
-			#if SCALE == 1
-				#ifdef USE_HUB75
-					display->drawPixel(off_x + x, off_y + y, pixels[x + y * w]);
-				#endif
-				#ifdef USE_LCD
-					tft.drawPixel(off_x + x, off_y + y, pixels[x + y * w]);
-					// drawPixel(off_x + x, off_y + y, pixels[x + y * w]);
-				#endif
-			#else
-				#ifdef USE_HUB75
-					display->fillRect((off_x + (x * SCALE), (off_y + (y * SCALE), w * SCALE, h * SCALE, usPixels[x]);
-				#endif
-				#ifdef USE_LCD
-					tft.fillRect(off_x + (x * SCALE), off_y + (y * SCALE), SCALE, SCALE, pixels[x + y * w]);
-				#endif
-			#endif
-		}	
-	}
-	return 1;
-}
+// 	// tft.writeRect(pDraw->x, pDraw->y, pDraw->iWidth, pDraw->iHeight, pDraw->pPixels);
+// 	int off_x = pDraw->x;
+// 	int off_y = pDraw->y;
+// 	int w = pDraw->iWidth;
+// 	uint16_t* pixels = (uint16_t*)pDraw->pPixels;
+// 	Serial.printf("JPEGDraw\n");
+// 	for (int x = 0; x < w; x++) {
+// 		for (int y = 0; y < pDraw->iHeight; y++) {
+// 			#ifdef USE_HUB75
+// 				display->fillRect((off_x + (x * SCALE), (off_y + (y * SCALE), w * SCALE, h * SCALE, usPixels[x]);
+// 			#endif
+// 			#ifdef USE_LCD
+// 				// tft.fillRect(
+// 				// 	off_x + ceil(x * img->scale),
+// 				// 	off_y + ceil(y * img->scale),
+// 				// 	ceil(img->scale),
+// 				// 	ceil(img->scale),
+// 				// 	pixels[x + y * w]
+// 				// );
+// 				// tft.fillRect(off_x + (x * SCALE), off_y + (y * SCALE), SCALE, SCALE, pixels[x + y * w]);
+// 			#endif
+// 		}	
+// 	}
+// 	return 1;
+// }
 
 // Draw a line of image directly on the LCD
 void GIFDraw(GIFDRAW *pDraw) {
@@ -212,10 +212,22 @@ void GIFDraw(GIFDRAW *pDraw) {
 
 	for (x=ofx; x<(pDraw->iWidth+ofx); x++) {
 		#ifdef USE_LCD
-			tft.fillRect(img->off_x+(x*SCALE), img->off_y+(y*SCALE), SCALE, SCALE, usPalette[*s++]);
+			tft.fillRect(
+				img->off_x + ceil(x * img->scale),
+				img->off_y + ceil(y * img->scale),
+				ceil(img->scale),
+				ceil(img->scale),
+				usPalette[*s++]
+			);
 		#endif
 		#ifdef USE_HUB75
-			display->drawPixel(img->off_x+x, img->off_y+y, usPalette[*s++]);
+			display->fillRect(
+				img->off_x + ceil(x * img->scale),
+				img->off_y + ceil(y * img->scale),
+				ceil(img->scale),
+				ceil(img->scale),
+				usPalette[*s++]
+			);
 		#endif
 	}
 }
@@ -381,6 +393,8 @@ void download_twitch_emote(String emotes) {
 		#ifdef USE_LED
 			digitalWrite(led, LOW);
 		#endif
+	} else {
+		Serial.printf("HTTP ERROR: %d\n", code);
 	}
 }
 
@@ -397,6 +411,8 @@ void download_bttv_emote(String emotes) {
 		#ifdef USE_LED
 			digitalWrite(led, LOW);
 		#endif
+	} else {
+		Serial.printf("HTTP ERROR: %d\n", code);
 	}
 }
 #endif
@@ -601,10 +617,6 @@ void task_irc(void* parameter) {
 			// return;
 		}
 		client.loop();
-		wifiManager.process();
-		#if USE_M5
-			M5.update();
-		#endif
 		vTaskDelay(1 / portTICK_PERIOD_MS);
 	}
 }
@@ -718,7 +730,7 @@ void setup() {
 	xTaskCreatePinnedToCore(
 		task_irc,    // Function that should be called
 		"task_irc",   // Name of the task (for debugging)
-		30000,            // Stack size (bytes)
+		8000,            // Stack size (bytes)
 		NULL,            // Parameter to pass
 		1,               // Task priority
 		NULL,             // Task handle
@@ -748,16 +760,18 @@ void loop() {
 				img->gif = new AnimatedGIF();
 				img->gif->begin(LITTLE_ENDIAN_PIXELS);
 				img->gif->open(img->data, img->len, GIFDraw);
-				img->off_x = ((int)MATRIX_W - img->gif->getCanvasWidth()  * SCALE) / 2 + OFF_X;
-				img->off_y = ((int)MATRIX_H - img->gif->getCanvasHeight() * SCALE) / 2 + OFF_Y;
+				img->scale = (float)min(MATRIX_W, MATRIX_H) / max(img->gif->getCanvasWidth(), img->gif->getCanvasHeight());
+				img->off_x = ((int)MATRIX_W - img->gif->getCanvasWidth()  * img->scale) / 2 + OFF_X;
+				img->off_y = ((int)MATRIX_H - img->gif->getCanvasHeight() * img->scale) / 2 + OFF_Y;
 				#ifdef USE_LCD
 					tft.fillScreen(TFT_BLACK);
 				#endif
 			} else if (type == 137) { // PNG
 				img->png = new PNG();
 				img->png->openRAM(img->data, img->len, PNGDraw);
-				img->off_x = ((int)MATRIX_W - img->png->getWidth()  * SCALE) / 2 + OFF_X;
-				img->off_y = ((int)MATRIX_H - img->png->getHeight() * SCALE) / 2 + OFF_Y;
+				img->scale = (float)min(MATRIX_W, MATRIX_H) / max(img->png->getWidth(), img->png->getHeight());
+				img->off_x = ((int)MATRIX_W - img->png->getWidth()  * img->scale) / 2 + OFF_X;
+				img->off_y = ((int)MATRIX_H - img->png->getHeight() * img->scale) / 2 + OFF_Y;
 				#ifdef USE_HUB75
 					display->clearScreen();
 				#endif
@@ -768,33 +782,34 @@ void loop() {
 				#ifdef USE_HUB75
 					flip_matrix();
 				#endif
-			} else if (type == 0xFF) { // JPEG
-				img->jpeg = new JPEGDEC();
-				Serial.printf("load JPEG, %d\n", img->len);
-				if (!img->jpeg->openRAM(img->data, img->len, JPEGDraw)) {
-					Serial.printf("JPEG ERROR %d\n", img->jpeg->getLastError());
-					free(img->data);
-					// img->png->close();
-					delete img->png;
-					imgs_data->cursor++;
-					imgs_data->cursor %= EMOTE_BUFFER_SIZE;
-					imgs_data->size--;
-				} else {
-					// img->jpeg->setPixelType(RGB565_LITTLE_ENDIAN);
-					img->off_x = ((int)MATRIX_W - img->jpeg->getWidth()  * SCALE) / 2 + OFF_X;
-					img->off_y = ((int)MATRIX_H - img->jpeg->getHeight() * SCALE) / 2 + OFF_Y;
-					#ifdef USE_HUB75
-						display->clearScreen();
-					#endif
-					#ifdef USE_LCD
-						tft.fillScreen(TFT_BLACK);
-					#endif
-					Serial.println(img->jpeg->decode(img->off_x, img->off_y, 0));
-					#ifdef USE_HUB75
-						flip_matrix();
-					#endif
-				}
 			}
+			// else if (type == 0xFF) { // JPEG
+			// 	img->jpeg = new JPEGDEC();
+			// 	Serial.printf("load JPEG, %d\n", img->len);
+			// 	if (!img->jpeg->openRAM(img->data, img->len, JPEGDraw)) {
+			// 		Serial.printf("JPEG ERROR %d\n", img->jpeg->getLastError());
+			// 		free(img->data);
+			// 		delete img->png;
+			// 		imgs_data->cursor++;
+			// 		imgs_data->cursor %= EMOTE_BUFFER_SIZE;
+			// 		imgs_data->size--;
+			// 	} else {
+			// 		// img->jpeg->setPixelType(RGB565_LITTLE_ENDIAN);
+			// 		img->scale = (float)min(MATRIX_W, MATRIX_H) / max(img->jpeg->getWidth(), img->jpeg->getHeight());
+			// 		img->off_x = ((int)MATRIX_W - img->jpeg->getWidth()  * img->scale) / 2 + OFF_X;
+			// 		img->off_y = ((int)MATRIX_H - img->jpeg->getHeight() * img->scale) / 2 + OFF_Y;
+			// 		#ifdef USE_HUB75
+			// 			display->clearScreen();
+			// 		#endif
+			// 		#ifdef USE_LCD
+			// 			tft.fillScreen(TFT_BLACK);
+			// 		#endif
+			// 		Serial.println(img->jpeg->decode(img->off_x, img->off_y, 0));
+			// 		#ifdef USE_HUB75
+			// 			flip_matrix();
+			// 		#endif
+			// 	}
+			// }
 			img->mode = PLAY;
 			img->end_time = millis() + MIN_TIME;
 		} else {
@@ -824,10 +839,10 @@ void loop() {
 					img->png->close();
 					delete img->png;
 				}
-				else if (type == 0XFF) { // JPEG
-					img->jpeg->close();
-					delete img->jpeg;
-				}
+				// else if (type == 0XFF) { // JPEG
+				// 	img->jpeg->close();
+				// 	delete img->jpeg;
+				// }
 
 				imgs_data->cursor++;
 				imgs_data->cursor %= EMOTE_BUFFER_SIZE;
@@ -835,6 +850,10 @@ void loop() {
 			}
 		}
 	}
+	wifiManager.process();
+	#if USE_M5
+		M5.update();
+	#endif
 	vTaskDelay(1 / portTICK_PERIOD_MS);
 }
 
