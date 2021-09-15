@@ -41,7 +41,8 @@ jobs:
       run: pio run -e Brian_Lough_64x64
     - name: Build m5stack
       run: pio run -e m5stack
-        
+    - name: Build Belge_2_32x32
+      run: pio run -e "Belge_2_32x32"
     - name: Deploy
       env:
         SUPER_SECRET: ${{ secrets.TOKEN }} 
@@ -53,6 +54,7 @@ jobs:
         mv .pio/build/Brian_Lough_64x32/firmware.bin firmware_Brian_Lough_64x32.bin
         mv .pio/build/Brian_Lough_64x64/firmware.bin firmware_Brian_Lough_64x64.bin
         mv .pio/build/m5stack/firmware.bin firmware_m5stack.bin
+        mv .pio/build/Belge_2_32x32/firmware.bin firmware_Belge_2_32x32.bin
 
         curl -sSF file=@firmware_odroid_esp32.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
         curl -sSF file=@firmware_hat.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
@@ -61,6 +63,7 @@ jobs:
         curl -sSF file=@firmware_Brian_Lough_64x32.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
         curl -sSF file=@firmware_Brian_Lough_64x64.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
         curl -sSF file=@firmware_m5stack.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
+        curl -sSF file=@firmware_Belge_2_32x32.bin 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
 
         echo `TZ="Europe/Paris" date '+%F %T'`" git:"`git rev-parse --short HEAD` > emote_matrix.info
         curl -sSF file=@emote_matrix.info 'http://antoine.doussaud.org:25478/upload?token='$SUPER_SECRET
